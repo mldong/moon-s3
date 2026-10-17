@@ -1,6 +1,7 @@
 name: ci
 
-# 三仓同形的门禁；这条仓的真端点档打一台**一次性 MinIO 进程**（对象族／分块／预签名／桶族全跑它）。
+# 三仓同形的门禁；这条仓的真端点档打一台**一次性 MinIO 进程**（对象族／分块／预签名／桶族／ACL 拒写
+# ／虚主机分桶全跑它，只有公网虚主机那一档留本机，理由在下面的 SKIP 说明里）。
 #
 # 为什么不是容器：2026-10-18 这轮先按 `services:`／`docker run` 写并推上 master，实测拉不到镜像——
 #   · `quay.io/minio/minio` 匿名拉报 `unauthorized`（手工走 registry v2 拿 pull 作用域的 token 再请求
@@ -20,13 +21,22 @@ name: ci
 # 值得花一行断言。校验用 `cut -f1` 取字段，不用 `sha256sum -c`——那文件里记的名字是
 # `minio.RELEASE.…` 而资产叫 `minio.linux-amd64.RELEASE.…`，`-c` 会因文件名不符而失败（现读确认过）。
 #
-# 故意不跑且必须响亮 SKIP 的三档（别当成覆盖到了）：
-#   · S3_VHL_*：live_acl_minio_test 与 live_vhost_local_test 共用这一个端点，而两者要求相反
-#     ——前者要 `PUT ?acl` 回 501，后者要端点按 Host 分桶。CI 这台 MinIO 只能满足前者，
-#     把 S3_VHL_* 指给它会把后者逼成红。要同时满足得自建带通配解析的端点 ⇒ 留本地复跑。
-#   · S3_VHOST_*：需要一个公网可达、且按 Host 里桶名分流的端点。
-#   ⇒ 本机以与这里完全相同的 env（只有 S3_LIVE_*）实测：46 条全跑、SKIP 恰好 3 行。
-#     条数断言按实测钉死成"恰好 3"，多一条是夹具掉了，少一条是有人把某档偷偷接上了。
+# 只有这一档故意不跑、且必须响亮 SKIP（别当成覆盖到了）：
+#   · S3_VHOST_*：需要一个**公网可达**、又按 Host 里桶名分流的端点——runner 里那台只听本机，
+#     给不出公网地址。它测的是"我们发的虚主机 URL 在真云上走不走得通"，本机对真端点跑过。
+#
+# 其余 MinIO 族的腿都在 CI 里真跑，包括两档曾被我判为"搬不进来"的：
+#   · ACL 拒写档（S3_ACL_REFUSE_*）：`PUT ?acl` 回 NotImplemented，而同一请求换错密钥回
+#     SignatureDoesNotMatch ⇒ 拒的是操作不是形状。这条就是 `supports_acl=false` 的行为判据。
+#   · 虚主机本地档（S3_VHL_*）：要 MinIO 起在 `MINIO_DOMAIN=localhost` 上才按 Host 取桶名。
+#     没设 domain 的实例对同一请求回 400 "unsupported API call for method: PUT at '/'"——
+#     我 2026-10-18 就是拿那台误判成"这代 MinIO 不支持虚主机"，实测更正（文件头注释里那条旧记录是对的）。
+#     还要客户端把 `<bucket>.localhost` 解析回环：Linux glibc 对 `.localhost` 有特例，本机 wasm 档实测可解析；
+#     runner 上万一不解析，这一腿会**红**而不是悄悄跳过——代价是一次 CI，不是假绿。
+#
+# 本机按与这里完全相同的 env 形状实测过两组：只给 S3_LIVE_* → 46 全绿、SKIP 3；
+# S3_LIVE_*＋S3_ACL_REFUSE_*＋S3_VHL_* 全给 → 46 全绿、SKIP 恰好 1（就是上面那档公网的）。
+# ⇒ 条数断言钉成"恰好 1"：多一条是夹具掉了，少一条是有人把公网那档偷偷接上了。
 #
 # 用例条数断言不许删：wasm-gc 那档会静默丢掉异步用例而退出码仍为 0，条数是"真跑过"的唯一证据。
 # 条数与改动同笔更新；对不上先现读再改，严禁拿删断言变绿。
@@ -53,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       EXPECTED_TESTS: "46"
-      EXPECTED_SKIPS: "3"
+      EXPECTED_SKIPS: "1"
       MINIO_USER: moonfsci
       MINIO_PASS: moonfsci-pw-1
       BUCKET: moonfs-ci-${{ github.run_id }}-${{ github.run_attempt }}
@@ -106,7 +116,9 @@ jobs:
       - name: Start a throwaway MinIO for this run
         run: |
           mkdir -p "$RUNNER_TEMP/moonfs-data"
-          MINIO_ROOT_USER="$MINIO_USER" MINIO_ROOT_PASSWORD="$MINIO_PASS" \
+          # MINIO_DOMAIN=localhost 是虚主机那档的开关：设了它才会从 Host 的首个标签取桶名，
+          # 不设则同样的请求回 400（判据见文件头）。路径式请求不受影响——Host 不以 .localhost 结尾。
+          MINIO_ROOT_USER="$MINIO_USER" MINIO_ROOT_PASSWORD="$MINIO_PASS" MINIO_DOMAIN=localhost \
             nohup "$RUNNER_TEMP/bin/minio" server "$RUNNER_TEMP/moonfs-data" \
               --console-address ":9001" \
               > "$RUNNER_TEMP/minio.log" 2>&1 &
@@ -143,6 +155,15 @@ jobs:
           S3_LIVE_AK: ${{ env.MINIO_USER }}
           S3_LIVE_SK: ${{ env.MINIO_PASS }}
           S3_LIVE_BUCKET: ${{ env.BUCKET }}
+          # 虚主机那两档必须用 `localhost` 而不是 127.0.0.1：客户端要把桶名拼成首个标签
+          # （`<bucket>.localhost`），而实例是按 `MINIO_DOMAIN=localhost` 认这个后缀的。
+          S3_VHL_ENDPOINT: http://localhost:9000
+          S3_VHL_AK: ${{ env.MINIO_USER }}
+          S3_VHL_SK: ${{ env.MINIO_PASS }}
+          S3_ACL_REFUSE_ENDPOINT: http://localhost:9000
+          S3_ACL_REFUSE_AK: ${{ env.MINIO_USER }}
+          S3_ACL_REFUSE_SK: ${{ env.MINIO_PASS }}
+          MOONFS_RUN_TAG: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           # pipefail 不许省：GH 默认只给 -e，`moon test | tee` 的退出码是 tee 的 0，
           # 真红的用例会被这条管道吃掉、只剩"Total tests" 那半句自证过关。
@@ -191,6 +212,10 @@ jobs:
             "$MC" rm --recursive --force "local/$BUCKET" >/dev/null 2>&1 || true
             "$MC" rb "local/$BUCKET" >/dev/null 2>&1 || true
             echo "清扫后本桶对象数=$("$MC" ls --recursive "local/$BUCKET" 2>/dev/null | wc -l)"
+            # 各腿自建自删的那些桶（虚主机两档与 ACL 档）应当已经不在了；这里只**记录**剩下什么，
+            # 不据此判红——判红会跟"腿本身已经红"重复，而泄漏读数本身就是我们要看的信号。
+            leftovers=$("$MC" ls local 2>/dev/null | awk '{print $NF}' | tr '\n' ' ' || true)
+            echo "实例里剩下的桶：${leftovers:-（无）}" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
           pkill -f "minio server" 2>/dev/null || true
           rm -rf "$RUNNER_TEMP/moonfs-data"

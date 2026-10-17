@@ -138,10 +138,12 @@ async fn live_local_virtual_hosted(
     addressing_style=VirtualHosted,
   )
   let client = @s3.Client::new(config, spy)
-  let (date, _) = @s3.utc_stamps(@env.now().reinterpret_as_int64())
-  let bucket_a = "moonfs-vh-a-" + date
-  let bucket_b = "moonfs-vh-b-" + date
-  let absent = "moonfs-vh-gone-" + date
+  // 桶名用 run_tag()（同包测试件里的共用 helper）而不是日期：CI 现在每轮都跑这一腿，
+  // 同一天并行的两跑（分支推＋tag 推是两个并发组）会用同名桶互删对方的现场。
+  let tag = run_tag()
+  let bucket_a = "moonfs-vh-a-" + tag
+  let bucket_b = "moonfs-vh-b-" + tag
+  let absent = "moonfs-vh-gone-" + tag
 
   for bucket in [bucket_a, bucket_b] {
     let _ = client.create_bucket({ bucket, }) catch {
