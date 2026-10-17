@@ -1,0 +1,310 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "mldong/moon-s3/s3"
+
+import {
+  "mldong/moon-hutool/http",
+  "mldong/moon-s3/sigv4",
+}
+
+// Values
+pub fn now_stamps() -> (String, String)
+
+pub fn response_user_metadata(Array[@http.Header]) -> Map[String, String]
+
+pub fn utc_stamps(Int64) -> (String, String)
+
+pub fn xml_all(String, String) -> Array[String]
+
+pub fn xml_error_code(String) -> String
+
+pub fn xml_error_message(String) -> String
+
+pub fn xml_escape(String) -> String
+
+pub fn xml_first(String, String) -> String?
+
+pub fn xml_unescape(String) -> String
+
+// Errors
+pub(all) suberror S3Error {
+  InvalidConfig(String)
+  InvalidRequest(String)
+  Signing(@sigv4.SigningError)
+  Transport(@http.TransportError)
+  Service(ServiceError)
+}
+
+// Types and methods
+pub(all) struct AbortMultipartUploadRequest {
+  bucket : String
+  key : String
+  upload_id : String
+}
+
+pub(all) struct AbortMultipartUploadResponse {
+}
+
+pub(all) struct AclGrant {
+  grantee : String?
+  permission : String?
+}
+
+pub(all) enum AddressingStyle {
+  Path
+  VirtualHosted
+}
+
+pub(all) struct BucketExistsRequest {
+  bucket : String
+}
+
+pub(all) struct BucketExistsResponse {
+  exists : Bool
+}
+
+pub(all) struct BucketInfo {
+  name : String
+  creation_date : String?
+}
+
+pub struct Client {
+  // private fields
+}
+pub async fn Client::abort_multipart_upload(Self, AbortMultipartUploadRequest) -> AbortMultipartUploadResponse raise S3Error
+pub async fn Client::bucket_exists(Self, BucketExistsRequest) -> BucketExistsResponse raise S3Error
+pub async fn Client::complete_multipart_upload(Self, CompleteMultipartUploadRequest) -> CompleteMultipartUploadResponse raise S3Error
+pub fn Client::config(Self) -> Config
+pub async fn Client::copy_object(Self, CopyObjectRequest) -> CopyObjectResponse raise S3Error
+pub async fn Client::create_bucket(Self, CreateBucketRequest) -> CreateBucketResponse raise S3Error
+pub async fn Client::create_multipart_upload(Self, CreateMultipartUploadRequest) -> CreateMultipartUploadResponse raise S3Error
+pub async fn Client::delete_bucket(Self, DeleteBucketRequest) -> DeleteBucketResponse raise S3Error
+pub async fn Client::delete_object(Self, DeleteObjectRequest) -> DeleteObjectResponse raise S3Error
+pub async fn Client::get_object(Self, GetObjectRequest) -> GetObjectResponse raise S3Error
+pub async fn Client::get_object_acl(Self, GetObjectAclRequest) -> GetObjectAclResponse raise S3Error
+pub async fn Client::list_buckets(Self, ListBucketsRequest) -> ListBucketsResponse raise S3Error
+pub async fn Client::list_objects(Self, ListObjectsRequest) -> ListObjectsResponse raise S3Error
+pub async fn Client::list_parts(Self, ListPartsRequest) -> ListPartsResponse raise S3Error
+pub fn Client::new(Config, &@http.Transport) -> Self
+pub fn Client::presigned_get_url(Self, String, String, Int) -> String raise S3Error
+pub fn Client::presigned_url(Self, String, String, @http.Method, Int) -> String raise S3Error
+pub async fn Client::put_object(Self, PutObjectRequest) -> PutObjectResponse raise S3Error
+pub async fn Client::put_object_acl(Self, PutObjectAclRequest) -> PutObjectAclResponse raise S3Error
+pub async fn Client::stat_object(Self, StatObjectRequest) -> StatObjectResponse raise S3Error
+pub async fn Client::upload_part(Self, UploadPartRequest) -> UploadPartResponse raise S3Error
+
+pub(all) struct CompleteMultipartUploadRequest {
+  bucket : String
+  key : String
+  upload_id : String
+  parts : Array[CompletedPart]
+}
+
+pub(all) struct CompleteMultipartUploadResponse {
+  bucket : String
+  key : String
+  etag : String
+}
+
+pub(all) struct CompletedPart {
+  part_number : Int
+  etag : String
+}
+
+pub struct Config {
+  endpoint : String
+  region : String
+  credentials : @sigv4.Credentials
+  addressing_style : AddressingStyle
+}
+pub fn Config::new(String, String, @sigv4.Credentials, addressing_style? : AddressingStyle) -> Self
+
+pub(all) struct CopyObjectRequest {
+  bucket : String
+  key : String
+  source_bucket : String
+  source_key : String
+}
+
+pub(all) struct CopyObjectResponse {
+  etag : String
+  last_modified : String?
+}
+
+pub(all) struct CreateBucketRequest {
+  bucket : String
+}
+
+pub(all) struct CreateBucketResponse {
+  location : String?
+}
+
+pub(all) struct CreateMultipartUploadRequest {
+  bucket : String
+  key : String
+  content_type : String?
+  metadata : Map[String, String]
+}
+
+pub(all) struct CreateMultipartUploadResponse {
+  bucket : String
+  key : String
+  upload_id : String
+}
+
+pub(all) struct DeleteBucketRequest {
+  bucket : String
+}
+
+pub(all) struct DeleteBucketResponse {
+}
+
+pub(all) struct DeleteObjectRequest {
+  bucket : String
+  key : String
+}
+
+pub(all) struct DeleteObjectResponse {
+  delete_marker : Bool?
+  version_id : String?
+}
+
+pub(all) struct GetObjectAclRequest {
+  bucket : String
+  key : String
+}
+
+pub(all) struct GetObjectAclResponse {
+  owner : String?
+  grants : Array[AclGrant]
+}
+pub fn GetObjectAclResponse::has_all_users_read(Self) -> Bool
+
+pub(all) struct GetObjectRequest {
+  bucket : String
+  key : String
+  range : String?
+}
+
+pub(all) struct GetObjectResponse {
+  content_length : Int64
+  content_type : String?
+  metadata : Map[String, String]
+  content_range : String?
+  accept_ranges : String?
+  etag : String?
+  body : &@http.ResponseBody
+}
+
+pub(all) struct ListBucketsRequest {
+  prefix : String?
+  continuation_token : String?
+  max_buckets : Int?
+}
+
+pub(all) struct ListBucketsResponse {
+  buckets : Array[BucketInfo]
+  continuation_token : String?
+}
+
+pub(all) struct ListObjectsRequest {
+  bucket : String
+  prefix : String?
+  delimiter : String?
+  continuation_token : String?
+  max_keys : Int?
+}
+
+pub(all) struct ListObjectsResponse {
+  objects : Array[ObjectInfo]
+  common_prefixes : Array[String]
+  is_truncated : Bool
+  next_continuation_token : String?
+}
+
+pub(all) struct ListPartsRequest {
+  bucket : String
+  key : String
+  upload_id : String
+  part_number_marker : Int?
+  max_parts : Int?
+}
+
+pub(all) struct ListPartsResponse {
+  parts : Array[PartInfo]
+  is_truncated : Bool
+  next_part_number_marker : Int?
+}
+
+pub(all) struct ObjectInfo {
+  key : String
+  etag : String?
+  size : Int64
+  last_modified : String?
+}
+
+pub(all) struct PartInfo {
+  part_number : Int
+  etag : String
+  size : Int64
+  last_modified : String?
+}
+
+pub(all) struct PutObjectAclRequest {
+  bucket : String
+  key : String
+  acl : String
+}
+
+pub(all) struct PutObjectAclResponse {
+}
+
+pub(all) struct PutObjectRequest {
+  bucket : String
+  key : String
+  body : @http.RequestBody
+  content_type : String?
+  metadata : Map[String, String]
+}
+
+pub(all) struct PutObjectResponse {
+  etag : String
+}
+
+pub(all) struct ServiceError {
+  status_code : Int
+  code : String
+  message : String
+  request_id : String?
+  host_id : String?
+  resource : String?
+}
+
+pub(all) struct StatObjectRequest {
+  bucket : String
+  key : String
+}
+
+pub(all) struct StatObjectResponse {
+  content_length : Int64
+  content_type : String?
+  metadata : Map[String, String]
+  etag : String?
+  last_modified : String?
+}
+
+pub(all) struct UploadPartRequest {
+  bucket : String
+  key : String
+  upload_id : String
+  part_number : Int
+  body : @http.RequestBody
+}
+
+pub(all) struct UploadPartResponse {
+  etag : String
+}
+
+// Type aliases
+pub using @sigv4 {type Credentials}
+
+// Traits

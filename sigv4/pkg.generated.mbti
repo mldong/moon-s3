@@ -1,0 +1,75 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "mldong/moon-s3/sigv4"
+
+import {
+  "mldong/moon-hutool/http",
+}
+
+// Values
+pub fn calculate_signature(String, Bytes) -> String
+
+pub fn canonical_query(Array[QueryPair]) -> String
+
+pub fn canonical_request(@http.Request, SigningInput, Credentials) -> String raise SigningError
+
+pub fn credential_scope(SigningInput) -> String raise SigningError
+
+pub fn date_stamp_of(String) -> String raise SigningError
+
+pub fn derive_signing_key(Credentials, SigningInput) -> Bytes raise SigningError
+
+pub fn empty_payload_hash() -> String
+
+pub fn encode_object_key(String) -> String
+
+pub fn normalize_header_value(String) -> String
+
+pub fn parse_query(String) -> Array[QueryPair]
+
+pub fn presign(@http.Request, Credentials, String, String, Int) -> @http.Request raise SigningError
+
+pub fn sign(@http.Request, Credentials, String, String, String) -> @http.Request raise SigningError
+
+pub fn split_url(String) -> UrlParts raise SigningError
+
+pub fn string_to_sign(String, SigningInput) -> String raise SigningError
+
+pub let unsigned_payload : String
+
+pub fn uri_encode_component(String) -> String
+
+// Errors
+pub(all) suberror SigningError {
+  InvalidInput(String)
+}
+
+// Types and methods
+pub struct Credentials {
+  access_key : String
+  secret_key : String
+  session_token : String?
+}
+pub fn Credentials::new(String, String, session_token? : String?) -> Self
+
+pub(all) struct QueryPair {
+  key : String
+  value : String
+}
+
+pub(all) struct SigningInput {
+  region : String
+  service : String
+  timestamp : String
+  payload_hash : String
+}
+
+pub(all) struct UrlParts {
+  scheme : String
+  authority : String
+  path : String
+  query : String
+}
+
+// Type aliases
+
+// Traits

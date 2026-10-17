@@ -1,0 +1,21 @@
+import {
+  "mldong/moon-hutool/http" @transport,
+  "mldong/moon-s3/sigv4",
+  "mldong/moon-hutool/date",
+  "mldong/moon-hutool/digest",
+  "moonbitlang/core/encoding/hex",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/string",
+}
+
+// 真链路用例（live_minio_test.mbt）要一个能真发请求的传输实现：端口包
+// transport 只有契约，moonhttp 适配层才是唯一碰网络的那一层；async 给
+// `async test` 提供运行时。这是**测试侧**依赖，库本身的运行时依赖不变
+// （换 HTTP 库只改适配层，s3 包依旧只认 transport 端口）。
+import {
+  "moonbitlang/async",
+  "moonbitlang/async/io",
+  "moonbitlang/core/env",
+} for "test"
+
+supported_targets = "wasm+native+js"

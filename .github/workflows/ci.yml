@@ -1,0 +1,67 @@
+name: ci
+
+# 三仓同形的门禁（这条线只判"检查／构建／测试／README 可复现"，发布链另开一条 workflow）。
+# 用例条数断言不许删：wasm-gc 那档会静默丢掉异步用例而退出码仍为 0，条数是"真跑过"的唯一证据。
+# 条数与改动同笔更新；对不上先现读再改，严禁拿删断言变绿。
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Check / Build / Test (wasm + native)
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_TESTS: "46"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MoonBit toolchain (latest)
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+
+      - name: Toolchain version
+        run: |
+          moon version --all
+          moon update
+
+      - name: Check
+        run: moon check --target wasm --no-render
+
+      - name: Build
+        run: |
+          moon build --target wasm --no-render
+          moon build --target native --no-render
+
+      - name: Test
+        run: |
+          moon test --target wasm --no-render | tee wasm-test.txt
+          moon test --target native --no-render | tee native-test.txt
+          grep -q "Total tests: $EXPECTED_TESTS" wasm-test.txt
+          grep -q "Total tests: $EXPECTED_TESTS" native-test.txt
+
+      - name: README snippet check
+        run: |
+          export MOON_HOME="$HOME/.moon"
+          bash scripts/readme-check.sh
+
+      - name: Generated interface is up to date
+        run: |
+          moon info --target wasm
+          git diff --exit-code -- '*pkg.generated.mbti'
+
+      - name: Formatting
+        run: moon fmt --check
+
+      - name: Assert zero warnings
+        run: |
+          moon check --target wasm --no-render 2>&1 | tee check.txt
+          ! grep -q "Warning" check.txt

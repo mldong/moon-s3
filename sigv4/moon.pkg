@@ -1,0 +1,9 @@
+import {
+  "mldong/moon-hutool/http" @transport,
+  "mldong/moon-hutool/digest",
+  "moonbitlang/core/encoding/hex",
+  "moonbitlang/core/encoding/percent",
+  "moonbitlang/core/encoding/utf8",
+}
+
+supported_targets = "wasm+native+js"
