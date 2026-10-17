@@ -1,16 +1,32 @@
 name: ci
 
-# 三仓同形的门禁。这条线判"检查／构建／测试／README 可复现"，发布链在同一文件的 publish job。
+# 三仓同形的门禁；这条仓的真端点档打一台**一次性 MinIO 进程**（对象族／分块／预签名／桶族全跑它）。
 #
-# 这一版**没有** S3 端点档，10 条 live 腿全部响亮 SKIP，而且条数被断言钉死。原因不是没试过：
-# 2026-10-18 这轮先按"CI 起一台一次性 MinIO"写好并推上 master（run 39048814956），实测红在拉镜像——
-#   · `quay.io/minio/minio:latest` → daemon 报 `unauthorized: access to the requested resource is not
-#     authorized`；绕到 registry v2 手工拿 pull 作用域的匿名 token 再请求 tags/list，照样 401
-#     ⇒ 不是 `latest` 这个 tag 没了，是整个命名空间不再允许匿名拉。
-#   · Docker Hub 那边：社区版镜像已被下架（MinIO 社区仓 2026-02 归档，镜像从 Docker Hub 移除）。
-# ⇒ "装 MinIO 再测"这条路要换一个 S3 端点才走得通（候选与判据见 hub 侧台账），换之前不许把它
-#   假装成已经覆盖。带 CI 端点时的读数是另一组数：本机以同样的 env（只有 S3_LIVE_*）实测
-#   46 条全跑、SKIP 恰好 3 行（两档虚主机＋一档 ACL 拒写）。
+# 为什么不是容器：2026-10-18 这轮先按 `services:`／`docker run` 写并推上 master，实测拉不到镜像——
+#   · `quay.io/minio/minio` 匿名拉报 `unauthorized`（手工走 registry v2 拿 pull 作用域的 token 再请求
+#     `tags/list` 仍 401 ⇒ 整个命名空间关了的，不是某个 tag 没了）；
+#   · Docker Hub 的社区镜像已被移除；
+#   · 官方下载站 `dl.min.io/server|minio/release/linux-amd64/…` 与 `dl.min.io/client/mc/…` 一律 **410 Gone**，
+#     正文原话："The open-source MinIO Server, MinIO Client (mc) and MinIO KES projects are archived
+#     and no longer maintained … These files are no longer served from this site."
+# 还活着的通道是归档仓的 **GitHub Release 资产**：minio/minio 与 minio/mc 的 release 里仍挂着
+# `linux-amd64` 二进制与 `.sha256sum`。所以这里按代次固定、按 sha256 校验后直接跑二进制，不起容器。
+#
+# 钉的这两代不是随手挑的：
+#   · MinIO `RELEASE.2025-09-07T16-13-09Z` ＝ 本机对着跑并取出那些读数的那一代
+#     （桶里现读的 `minio --version` 同号）⇒ CI 里的端点与本地证据同源；
+#   · mc `RELEASE.2025-08-13T08-35-41Z` ＝ mc 归档仓最后一个还带 linux-amd64 资产的代次。
+# 两个 sha256 都写死在这儿：仓库已归档，资产被换掉的可能性极低，但"下载的字节就是那代产物"这件事
+# 值得花一行断言。校验用 `cut -f1` 取字段，不用 `sha256sum -c`——那文件里记的名字是
+# `minio.RELEASE.…` 而资产叫 `minio.linux-amd64.RELEASE.…`，`-c` 会因文件名不符而失败（现读确认过）。
+#
+# 故意不跑且必须响亮 SKIP 的三档（别当成覆盖到了）：
+#   · S3_VHL_*：live_acl_minio_test 与 live_vhost_local_test 共用这一个端点，而两者要求相反
+#     ——前者要 `PUT ?acl` 回 501，后者要端点按 Host 分桶。CI 这台 MinIO 只能满足前者，
+#     把 S3_VHL_* 指给它会把后者逼成红。要同时满足得自建带通配解析的端点 ⇒ 留本地复跑。
+#   · S3_VHOST_*：需要一个公网可达、且按 Host 里桶名分流的端点。
+#   ⇒ 本机以与这里完全相同的 env（只有 S3_LIVE_*）实测：46 条全跑、SKIP 恰好 3 行。
+#     条数断言按实测钉死成"恰好 3"，多一条是夹具掉了，少一条是有人把某档偷偷接上了。
 #
 # 用例条数断言不许删：wasm-gc 那档会静默丢掉异步用例而退出码仍为 0，条数是"真跑过"的唯一证据。
 # 条数与改动同笔更新；对不上先现读再改，严禁拿删断言变绿。
@@ -33,11 +49,18 @@ concurrency:
 
 jobs:
   verify:
-    name: Check / Build / Test (wasm + native)
+    name: Check / Build / Test (wasm + native, live MinIO)
     runs-on: ubuntu-latest
     env:
       EXPECTED_TESTS: "46"
-      EXPECTED_SKIPS: "10"
+      EXPECTED_SKIPS: "3"
+      MINIO_USER: moonfsci
+      MINIO_PASS: moonfsci-pw-1
+      BUCKET: moonfs-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      MINIO_REL: RELEASE.2025-09-07T16-13-09Z
+      MINIO_SHA: 7c5bd8512c6e966455b1d198209358b2d191c77a83ab377c4073281065fb855f
+      MC_REL: RELEASE.2025-08-13T08-35-41Z
+      MC_SHA: 01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891
     steps:
       - uses: actions/checkout@v4
 
@@ -51,6 +74,60 @@ jobs:
           moon version --all
           moon update
 
+      # 抓取带重试：GitHub Release 资产偶发 502；重试的是"拿到那代产物"，sha256 不匹配一律红。
+      - name: Fetch the pinned MinIO server and client binaries
+        run: |
+          BIN="$RUNNER_TEMP/bin"; mkdir -p "$BIN"
+          fetch() { # $1=url $2=out $3=expected-sha
+            local tries=1
+            until curl -fsSL --retry 3 --retry-delay 5 "$1" -o "$2"; do
+              if [ "$tries" -ge 3 ]; then echo "::error::资产拉不下来：$1"; return 1; fi
+              tries=$((tries + 1)); sleep 15
+            done
+            local got; got=$(sha256sum "$2" | cut -d' ' -f1)
+            if [ "$got" != "$3" ]; then
+              echo "::error::sha256 不符（期望 $3，实得 $got）——不是那代产物，别继续"
+              return 1
+            fi
+            echo "  $(basename "$2") sha256 已核"
+          }
+          fetch "https://github.com/minio/minio/releases/download/$MINIO_REL/minio.linux-amd64.$MINIO_REL" \
+                "$BIN/minio" "$MINIO_SHA"
+          fetch "https://github.com/minio/mc/releases/download/$MC_REL/mc.linux-amd64.$MC_REL" \
+                "$BIN/mc" "$MC_SHA"
+          chmod +x "$BIN/minio" "$BIN/mc"
+          "$BIN/minio" --version
+          echo "MinIO 代次＝$MINIO_REL（与本机取读数那代同号）· mc＝$MC_REL" >> "$GITHUB_STEP_SUMMARY"
+
+      # 单节点、数据目录在 RUNNER_TEMP 里 ⇒ 随 job 销毁。GH 托管 runner 是单机一次性 VM，
+      # 9000 绑在不对外暴露的地址上；测试一律打 127.0.0.1:9000。
+      # 启动姿势照本机那台现役容器的 Args（`server <dir> --console-address ":9001"`），不是猜的——
+      # 那台的 Args 现读就是这个代次（RELEASE.2025-09-07）在用的写法。
+      - name: Start a throwaway MinIO for this run
+        run: |
+          mkdir -p "$RUNNER_TEMP/moonfs-data"
+          MINIO_ROOT_USER="$MINIO_USER" MINIO_ROOT_PASSWORD="$MINIO_PASS" \
+            nohup "$RUNNER_TEMP/bin/minio" server "$RUNNER_TEMP/moonfs-data" \
+              --console-address ":9001" \
+              > "$RUNNER_TEMP/minio.log" 2>&1 &
+          ready=0
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1; then
+              ready=1; break
+            fi
+            sleep 2
+          done
+          [ "$ready" = "1" ] || { echo "::error::MinIO 60s 内没起来"; cat "$RUNNER_TEMP/minio.log"; exit 1; }
+          echo "MinIO 就绪（health/live 200）"
+
+      # 对象族那几条腿要求桶已存在；桶名带 run_id＋run_attempt，绝不碰别的桶。
+      - name: Create the run's bucket
+        run: |
+          export MC_CONFIG_DIR="$RUNNER_TEMP/mc-config"; mkdir -p "$MC_CONFIG_DIR"
+          "$RUNNER_TEMP/bin/mc" alias set local http://127.0.0.1:9000 "$MINIO_USER" "$MINIO_PASS" >/dev/null
+          "$RUNNER_TEMP/bin/mc" mb "local/$BUCKET"
+          "$RUNNER_TEMP/bin/mc" ls local | grep -F "$BUCKET"
+
       - name: Check
         run: moon check --target wasm --no-render
 
@@ -60,6 +137,12 @@ jobs:
           moon build --target native --no-render
 
       - name: Test
+        env:
+          S3_LIVE_ENDPOINT: http://127.0.0.1:9000
+          S3_LIVE_REGION: us-east-1
+          S3_LIVE_AK: ${{ env.MINIO_USER }}
+          S3_LIVE_SK: ${{ env.MINIO_PASS }}
+          S3_LIVE_BUCKET: ${{ env.BUCKET }}
         run: |
           # pipefail 不许省：GH 默认只给 -e，`moon test | tee` 的退出码是 tee 的 0，
           # 真红的用例会被这条管道吃掉、只剩"Total tests" 那半句自证过关。
@@ -70,13 +153,11 @@ jobs:
           for f in wasm-test.txt native-test.txt; do
             grep -q "Total tests: $EXPECTED_TESTS, passed: $EXPECTED_TESTS, failed: 0" "$f"
             skips=$(grep -c "SKIP IS NOT A PASS" "$f" || true)
-            echo "$f：$EXPECTED_TESTS 条全绿已核，SKIP 行数=$skips（CI 无端点，应为 $EXPECTED_SKIPS）"
+            echo "$f：$EXPECTED_TESTS 条全绿已核，SKIP 行数=$skips（应为 $EXPECTED_SKIPS）"
             test "$skips" = "$EXPECTED_SKIPS"
           done
-          {
-            echo "这轮**没有**跑到的：S3 live 腿 $EXPECTED_SKIPS 条（CI 里没有可用的 S3 端点，"
-            echo "MinIO 社区镜像已下架，见文件头）。它们只在本机带凭据时对真端点跑过。"
-          } >> "$GITHUB_STEP_SUMMARY"
+          grep -E "^SKIP IS NOT A PASS" wasm-test.txt | sed 's/^/  跳过的是：/' \
+            | tee -a "$GITHUB_STEP_SUMMARY" || true
 
       - name: README snippet check
         run: |
@@ -95,6 +176,26 @@ jobs:
         run: |
           moon check --target wasm --no-render 2>&1 | tee check.txt
           ! grep -q "Warning" check.txt
+
+      # 腿内部本来就该自删（测完回查 0 残留）；这一步是兜底：跑挂了、红在中途，也把本轮这个桶清干净，
+      # 并把"清掉几个对象"作为读数打出来，不只凭"命令返回 0"说清了。数据目录随 job 销毁。
+      - name: Sweep and re-count this run's bucket
+        if: always()
+        env:
+          MC_CONFIG_DIR: ${{ runner.temp }}/mc-config
+        run: |
+          MC="$RUNNER_TEMP/bin/mc"
+          if [ -x "$MC" ]; then
+            left=$("$MC" ls --recursive "local/$BUCKET" 2>/dev/null | wc -l)
+            echo "清扫前本桶对象数=$left"
+            "$MC" rm --recursive --force "local/$BUCKET" >/dev/null 2>&1 || true
+            "$MC" rb "local/$BUCKET" >/dev/null 2>&1 || true
+            echo "清扫后本桶对象数=$("$MC" ls --recursive "local/$BUCKET" 2>/dev/null | wc -l)"
+          fi
+          pkill -f "minio server" 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP/moonfs-data"
+          echo "本轮 MinIO 进程与数据目录已回收（桶与对象都在 RUNNER_TEMP 里，跨 job 不残留）" \
+            >> "$GITHUB_STEP_SUMMARY"
 
   publish:
     name: Publish mldong/moon-s3 to mooncakes
@@ -152,8 +253,7 @@ jobs:
       # 用 `moon add`（不给版本号，由注册表解析）引刚发上去的那一代，把解析到的 pin 打进 log，
       # 再真编译真跑。探针里的表达式抄自已过门禁的 README 代码块。
       # 为什么不用 `import { "mldong/moon-s3" }`：这个版本的 moon.mod 拒绝无版本号的 registry 依赖
-      # （实测报 "moon.mod only supports versioned registry dependencies in import"），
-      # 所以引版本这一步必须走 `moon add`，否则探的是工装自己的错。
+      # （实测报 "moon.mod only supports versioned registry dependencies in import"）。
       - name: Consumer leg — install the just-published version and build against it
         run: |
           export MOON_HOME="$HOME/.moon"
@@ -164,8 +264,7 @@ jobs:
           printf 'import {\n  "mldong/moon-s3/s3" @sdk,\n}\n' > "$probe/lib/moon.pkg"
           printf 'test "the just-published module installs and works" {\n  assert_eq(\n    @sdk.xml_error_code("<Error><Code>NoSuchBucket</Code></Error>"),\n    "NoSuchBucket",\n  )\n}\n' > "$probe/lib/probe_test.mbt"
           cd "$probe"
-          # 发布后索引与制品的传播有尾（上传 200 ≠ 装得到），故这一步重试 3 次；
-          # 用了几次才装到要打进 summary，靠 re-run 混过去的验收不算验收。
+          # 发布后索引与制品的传播有尾（上传 200 ≠ 装得到），故重试 3 次；次数进 summary。
           a=1
           until moon add mldong/moon-s3; do
             if [ "$a" -ge 3 ]; then
@@ -175,5 +274,5 @@ jobs:
             a=$((a + 1)); moon update >/dev/null 2>&1 || true; sleep 20
           done
           echo "consumer leg 安装所用尝试次数：$a / 3" >> "$GITHUB_STEP_SUMMARY"
-          echo "注册表解析到的 pin：$(sed -nE 's/.*"(mldong\/moon-s3@[^"]+)".*/\1/p' moon.mod)"
+          echo "注册表解析到的 pin：$(sed -nE 's/.*"(***\/moon-s3@[^"]+)".*/\1/p' moon.mod)"
           moon test --target wasm --no-render
