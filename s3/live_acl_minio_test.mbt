@@ -13,6 +13,19 @@
 //     moment to flip the flag rather than edit this file's expectations quietly.
 //
 // Env: S3_VHL_* (see the C 卡 §7-7 recipe). Missing env is a loud skip.
+// MOONFS_RUN_TAG scopes the bucket name to one run; without it the millisecond
+// clock is used, so two runs on the same day never share a bucket — a shared
+// bucket means one run's cleanup deletes the other run's in-flight subject.
+
+///|
+fn run_tag() -> String {
+  let from_env = @env.get_env_var("MOONFS_RUN_TAG").unwrap_or("")
+  if from_env.is_empty() {
+    @env.now().to_string()
+  } else {
+    from_env
+  }
+}
 
 ///|
 fn error_code(error : @s3.S3Error) -> String {
@@ -36,7 +49,7 @@ async fn live_acl_semantics(
     ),
     @transport.AsyncHttpTransport::new(),
   )
-  let bucket = "moonfs-acl-20261016"
+  let bucket = "moonfs-acl-" + run_tag()
   let key = "subject.txt"
   let _ = client.create_bucket({ bucket, }) catch {
     error => fail("create_bucket: " + render_error(error))
