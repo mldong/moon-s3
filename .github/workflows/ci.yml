@@ -1,21 +1,16 @@
 name: ci
 
-# 三仓同形的门禁；差别在真端点档：这条仓在 job 里起一台一次性 MinIO（对象族／分块／预签名／桶族
-# 全都打它），随 job 销毁。
+# 三仓同形的门禁。这条线判"检查／构建／测试／README 可复现"，发布链在同一文件的 publish job。
 #
-# MinIO 用 `docker run` 而不是 `services:`，是有实测根据的：这台镜像的
-# Entrypoint=/usr/bin/docker-entrypoint.sh、CMD=["minio"]，而那个 entrypoint 只在"$1 不是 minio
-# 时"补前缀——`services:` 没法传 `server /data`，实测容器只会打印 usage 就退出（本机自建的那台
-# MinIO 容器现读 Args＝["server","/data","--console-address",":9001"]）。镜像里带 curl 与 mc，
-# 所以建桶与清扫都用 `docker exec ... mc`，不额外下载客户端。
-#
-# 两档故意不在 CI 里跑，且必须响亮 SKIP，别当成覆盖到了：
-#   - S3_VHL_*（live_acl_minio_test 与 live_vhost_local_test 共用同一个端点）：这两条腿对端点
-#     的要求相反——前者要 `PUT ?acl` 回 501，后者要端点按 Host 分桶。CI 那台 MinIO 只能满足前者，
-#     但那会把后者逼成红；要同时满足得自建带通配解析的端点，所以两档都留本地复跑（配方见文件头注释）。
-#   - S3_VHOST_*：需要一个公网可达、且按 Host 里桶名分流的端点。
-#   ⇒ 带 CI 这套 env 在本机实测：46 条全跑，SKIP 恒 3 行，就是上面三条腿。条数断言按实测写死成"恰好 3"，
-#     多一条是夹具掉了，少一条是有人把某档偷偷接上了——两种都要红。
+# 这一版**没有** S3 端点档，10 条 live 腿全部响亮 SKIP，而且条数被断言钉死。原因不是没试过：
+# 2026-10-18 这轮先按"CI 起一台一次性 MinIO"写好并推上 master（run 39048814956），实测红在拉镜像——
+#   · `quay.io/minio/minio:latest` → daemon 报 `unauthorized: access to the requested resource is not
+#     authorized`；绕到 registry v2 手工拿 pull 作用域的匿名 token 再请求 tags/list，照样 401
+#     ⇒ 不是 `latest` 这个 tag 没了，是整个命名空间不再允许匿名拉。
+#   · Docker Hub 那边：社区版镜像已被下架（MinIO 社区仓 2026-02 归档，镜像从 Docker Hub 移除）。
+# ⇒ "装 MinIO 再测"这条路要换一个 S3 端点才走得通（候选与判据见 hub 侧台账），换之前不许把它
+#   假装成已经覆盖。带 CI 端点时的读数是另一组数：本机以同样的 env（只有 S3_LIVE_*）实测
+#   46 条全跑、SKIP 恰好 3 行（两档虚主机＋一档 ACL 拒写）。
 #
 # 用例条数断言不许删：wasm-gc 那档会静默丢掉异步用例而退出码仍为 0，条数是"真跑过"的唯一证据。
 # 条数与改动同笔更新；对不上先现读再改，严禁拿删断言变绿。
@@ -38,14 +33,11 @@ concurrency:
 
 jobs:
   verify:
-    name: Check / Build / Test (wasm + native, live MinIO)
+    name: Check / Build / Test (wasm + native)
     runs-on: ubuntu-latest
     env:
       EXPECTED_TESTS: "46"
-      EXPECTED_SKIPS: "3"
-      MINIO_USER: moonfsci
-      MINIO_PASS: moonfsci-pw-1
-      BUCKET: moonfs-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      EXPECTED_SKIPS: "10"
     steps:
       - uses: actions/checkout@v4
 
@@ -59,29 +51,6 @@ jobs:
           moon version --all
           moon update
 
-      # 一次性容器：只监听 runner 自己的 127.0.0.1:9000，桶名带 run_id＋run_attempt，
-      # 绝不碰别的桶；job 一结束整台容器连同它的卷一起没。
-      - name: Start a throwaway MinIO for this run
-        run: |
-          docker run -d --name moonfs-minio -p 127.0.0.1:9000:9000 \
-            -e MINIO_ROOT_USER="$MINIO_USER" -e MINIO_ROOT_PASSWORD="$MINIO_PASS" \
-            quay.io/minio/minio:latest server /data
-          ready=0
-          for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1; then
-              ready=1; break
-            fi
-            sleep 2
-          done
-          [ "$ready" = "1" ] || { echo "::error::MinIO 60s 内没起来"; docker logs moonfs-minio; exit 1; }
-          echo "MinIO 就绪（health/live 200）"
-
-      - name: Create the run's bucket
-        run: |
-          docker exec moonfs-minio mc alias set local http://127.0.0.1:9000 "$MINIO_USER" "$MINIO_PASS" >/dev/null
-          docker exec moonfs-minio mc mb "local/$BUCKET"
-          docker exec moonfs-minio mc ls local | grep -F "$BUCKET"
-
       - name: Check
         run: moon check --target wasm --no-render
 
@@ -91,12 +60,6 @@ jobs:
           moon build --target native --no-render
 
       - name: Test
-        env:
-          S3_LIVE_ENDPOINT: http://127.0.0.1:9000
-          S3_LIVE_REGION: us-east-1
-          S3_LIVE_AK: ${{ env.MINIO_USER }}
-          S3_LIVE_SK: ${{ env.MINIO_PASS }}
-          S3_LIVE_BUCKET: ${{ env.BUCKET }}
         run: |
           # pipefail 不许省：GH 默认只给 -e，`moon test | tee` 的退出码是 tee 的 0，
           # 真红的用例会被这条管道吃掉、只剩"Total tests" 那半句自证过关。
@@ -107,10 +70,13 @@ jobs:
           for f in wasm-test.txt native-test.txt; do
             grep -q "Total tests: $EXPECTED_TESTS, passed: $EXPECTED_TESTS, failed: 0" "$f"
             skips=$(grep -c "SKIP IS NOT A PASS" "$f" || true)
-            echo "$f：$EXPECTED_TESTS 条全绿已核，SKIP 行数=$skips（应为 $EXPECTED_SKIPS）"
+            echo "$f：$EXPECTED_TESTS 条全绿已核，SKIP 行数=$skips（CI 无端点，应为 $EXPECTED_SKIPS）"
             test "$skips" = "$EXPECTED_SKIPS"
           done
-          grep -E "^SKIP IS NOT A PASS" wasm-test.txt | sed 's/^/  跳过的是：/'
+          {
+            echo "这轮**没有**跑到的：S3 live 腿 $EXPECTED_SKIPS 条（CI 里没有可用的 S3 端点，"
+            echo "MinIO 社区镜像已下架，见文件头）。它们只在本机带凭据时对真端点跑过。"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: README snippet check
         run: |
@@ -129,17 +95,6 @@ jobs:
         run: |
           moon check --target wasm --no-render 2>&1 | tee check.txt
           ! grep -q "Warning" check.txt
-
-      # 腿内部本来就该自删（测完回查 0 残留）；这一步是兜底：跑挂了、红在中途，也把本轮那个桶清干净，
-      # 并把"清掉几个对象"作为读数打出来，不只凭"命令返回 0"说清了。
-      - name: Sweep and re-count this run's bucket
-        if: always()
-        run: |
-          left=$(docker exec moonfs-minio mc ls --recursive "local/$BUCKET" 2>/dev/null | wc -l)
-          echo "清扫前本桶对象数=$left"
-          docker exec moonfs-minio mc rm --recursive --force "local/$BUCKET" >/dev/null 2>&1 || true
-          echo "清扫后本桶对象数=$(docker exec moonfs-minio mc ls --recursive "local/$BUCKET" 2>/dev/null | wc -l)"
-          docker rm -f moonfs-minio >/dev/null 2>&1 || true
 
   publish:
     name: Publish mldong/moon-s3 to mooncakes
