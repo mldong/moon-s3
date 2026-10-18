@@ -189,19 +189,20 @@ jobs:
           moon test --target wasm -j 1 --no-render | tee wasm-test.txt
           moon test --target native -j 1 --no-render | tee native-test.txt
           # 基准那一档是七牛那条公网 vhost 腿——runner 给不出可达地址，它每轮都响亮跳过。
-          # 兼容平台腿的凭据到位几组，就少几档跳过；一组都没到位时这一轮**不含** COS／OSS，
+          # 兼容平台腿的凭据到位几组，就少几档跳过；一组都没到位时这一轮**不含** COS／OSS／Kodo，
           # 那句话必须出现在日志与 summary 里，不许被"49 条全绿"这种形状盖掉。
           want_skips=1
           [ -z "${S3_COS_AK:-}" ] && want_skips=$((want_skips + 4))
           [ -z "${S3_OSS_AK:-}" ] && want_skips=$((want_skips + 4))
-          # Kodo 那两档在 CI 里固定跳过，是**有意**的：一条腿会先问 S3 面"你看得见哪些桶"，
-          # 而答案取决于账号里哪个桶被接进这道门——那是账号状态，不该钉成 CI 的 secret，
-          # 否则哪天桶的可见性一变，门禁红的原因跟代码毫无关系。它在本地门禁脚本里真跑
-          # （两种桶各一条断言分支都覆盖过）。
+          # Kodo 那两档在 CI 里固定跳过，是**有意**的：那条腿要先问这一面"你承认哪些桶名"，
+          # 而答案取决于账号里那个桶在这一面上叫什么——实测 2018 年那个桶用的是一个内部名而不是
+          # 控制台显示的名字。那是账号状态，不该钉成 CI 的 secret，否则哪天名字或账号一变，
+          # 门禁红的原因跟代码毫无关系。它在本地门禁脚本里真跑
+          # （被承认／不被承认两支分支各有断言，两支都覆盖过）。
           [ -z "${S3_KODO_AK:-}" ] && want_skips=$((want_skips + 2))
           if [ "$want_skips" != "1" ]; then
-            echo "::warning::兼容平台腿有 $((want_skips - 1)) 档没被真跑（缺 secret）——本轮绿不含 COS／OSS"
-            echo "兼容平台腿未真跑：缺 $((want_skips - 1)) 档（COS 四档／OSS 四档），本轮绿不含它们" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::兼容平台腿有 $((want_skips - 1)) 档没被真跑（缺 secret）——本轮绿不含 COS／OSS／Kodo"
+            echo "兼容平台腿未真跑：缺 $((want_skips - 1)) 档（COS 四／OSS 四／Kodo 二），本轮绿不含它们" >> "$GITHUB_STEP_SUMMARY"
           fi
           for f in wasm-test.txt native-test.txt; do
             grep -q "Total tests: $EXPECTED_TESTS, passed: $EXPECTED_TESTS, failed: 0" "$f"
