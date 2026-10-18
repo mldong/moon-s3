@@ -299,5 +299,9 @@ jobs:
             a=$((a + 1)); moon update >/dev/null 2>&1 || true; sleep 20
           done
           echo "consumer leg 安装所用尝试次数：$a / 3" >> "$GITHUB_STEP_SUMMARY"
-          echo "注册表解析到的 pin：$(sed -nE 's/.*"(***\/moon-s3@[^"]+)".*/\1/p' moon.mod)"
+          # 取 pin 用 `grep -o 'moon-s3@[0-9.]*'`：上一版这里写的是
+          # `sed -nE 's/.*"(mldong\/moon-s3@[^"]+)".*/\1/p'`，而那行内容是我从被 GH 遮罩过的
+          # 日志里抄回来的——`mldong` 已经被换成 `***`，于是这条 echo 恒空（探针本身照跑，
+          # 但"解析到哪一代"这个读数一直是死格）。挑不含用户名的片段就没这个坑。
+          echo "注册表解析到的 pin：$(grep -o 'moon-s3@[0-9.]*' moon.mod | head -1)"
           moon test --target wasm --no-render
