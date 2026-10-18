@@ -19,17 +19,22 @@
 //      region, and a wrong endpoint says so directly (`400 IncorrectRegion`).
 //   2. The name this surface answers to is not always the name the console
 //      shows, and that single fact decided every refusal seen in an earlier
-//      round. One of this account's two buckets — fine over the native API, with
-//      upload tokens and CDN playback both working — is listed in the console
-//      under a readable name, while service-level `GET /` answers a six-character
-//      internal id for it. Under that id the object family works exactly like
-//      point 1; under the console name the same surface answers `403 AccessDenied`
-//      to a listing and `404 NoSuchKey` to a key that genuinely exists (measured
-//      both ways against the same bytes: the 18137-byte object the CDN serves is
-//      read back whole through the id, byte for byte). Writing to the console name
-//      answers `403`, and a different region's endpoint states the reason plainly
-//      (`400 IncorrectRegion`), so this is not a wrong-region artifact: the region
-//      used here is the one that bucket lives in.
+//      round. Qiniu states the rule on its 服务域名 page (`/kodo/4088`) and on the
+//      console itself, not on the AWS-S3-compatibility page: 空间名称要求全局唯一；
+//      **如不唯一，将使用自动生成的空间名称** — so a bucket named with a common word
+//      answers to a generated short name over S3, while a rare one keeps its own.
+//      Where to read the real value: `GET /` (Get Service) reports it, and the
+//      console shows it as 空间概览 → 系统域名 → "S3 协议的外网访问".
+//      Nothing to do with the age of the bucket, which is what an earlier note
+//      here guessed.
+//      Under the name from `GET /` the object family works exactly like point 1;
+//      under the console name the same surface answers `403 AccessDenied` to a
+//      listing and `404 NoSuchKey` to a key that genuinely exists (measured both
+//      ways against the same bytes: the 18137-byte object the CDN serves is read
+//      back whole through the generated name, byte for byte). Writing to the
+//      console name answers `403`, and a different region's endpoint states the
+//      reason plainly (`400 IncorrectRegion`), so this is not a wrong-region
+//      artifact: the region used here is the one that bucket lives in.
 //
 // So the trap on this platform is the **bucket name**, and it is silently
 // symmetric: point a client at the console name and every operation on that
@@ -541,6 +546,31 @@ async fn kodo_presigned_get(
   println("tampered GET status=" + tampered.status.to_string())
   assert_eq(tampered.status, 403)
   let _ = drain(tampered.body)
+  // A third cell, and the one that separates this surface from AWS: the same key
+  // fetched with **no signature at all** is refused outright, even though the
+  // bucket here is public-read. Documented on Qiniu's 服务域名 page (the S3 access
+  // domains require an AWS Signature; anonymous access is not supported), so a
+  // client that leans on "public bucket ⇒ plain GET works" gets a surprise that
+  // has nothing to do with the bucket's own permission setting.
+  live_step(started, calls, "GET the same key with no signature at all")
+  let unsigned_url = match url.find("?") {
+    Some(i) => url[:i].to_owned()
+    None => url
+  }
+  let anon = bare.send({
+    http_method: Get,
+    url: unsigned_url,
+    headers: [],
+    body: @transport.RequestBody::Empty,
+  })
+  let anon_body = drain(anon.body)
+  println(
+    "unsigned anonymous GET status=" +
+    anon.status.to_string() +
+    " body=" +
+    @utf8.decode_lossy(anon_body),
+  )
+  assert_eq(anon.status, 400)
   let _ = client.delete_object({ bucket, key, })
   live_sweep_verified(client, bucket, prefix)
 }
