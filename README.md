@@ -161,7 +161,8 @@ test "Kodo 这一档：S3 形端点、虚主机，区域由端点而不是签名
   `s3.<region>.qiniucs.com`，它直接回 `400 IncorrectRegion`。域名表按区给：
   `cn-east-1`／`cn-north-1`／`cn-south-1`／`us-north-1`／`ap-southeast-1..3`。
 - **桶名要按 `list_buckets` 给的写法填，控制台显示的那个未必被承认**。规则写在《服务域名》
-  那一页（`developer.qiniu.com/kodo/4088`）和控制台上（**不在**"AWS S3 兼容"那页）：
+  那一页（<https://developer.qiniu.com/kodo/4088/s3-access-domainname>）和控制台上
+  （**不在**"AWS S3 兼容"那页）：
   空间名称要求全局唯一，**如不唯一就自动生成一个 S3 空间名**——常见词的名字会被换掉，
   罕见的原样保留。真名字两处能读到：服务级 `list_buckets` 回的就是它，控制台在
   空间概览 → 系统域名 → "S3 协议的外网访问" 也直接印出来。

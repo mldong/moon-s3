@@ -18,7 +18,8 @@
 //      character for character the same as the real one. The endpoint carries the
 //      region, and a wrong endpoint says so directly (`400 IncorrectRegion`).
 //   2. The name this surface answers to is not always the name the console
-//      shows. Qiniu states the rule on its 服务域名 page (`/kodo/4088`) and on the
+//      shows. Qiniu states the rule on its 服务域名 page
+//      (`https://developer.qiniu.com/kodo/4088/s3-access-domainname`) and on the
 //      console itself, not on the AWS-S3-compatibility page: 空间名称要求全局唯一；
 //      **如不唯一，将使用自动生成的空间名称** — so a bucket named with a common word
 //      answers to a generated short name over S3, while a rare one keeps its own.
