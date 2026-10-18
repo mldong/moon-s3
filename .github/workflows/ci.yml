@@ -62,7 +62,7 @@ jobs:
     name: Check / Build / Test (wasm + native, live MinIO)
     runs-on: ubuntu-latest
     env:
-      EXPECTED_TESTS: "48"
+      EXPECTED_TESTS: "49"
       EXPECTED_SKIPS: "1"
       MINIO_USER: moonfsci
       MINIO_PASS: moonfsci-pw-1

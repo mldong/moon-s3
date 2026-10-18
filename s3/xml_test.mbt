@@ -74,3 +74,18 @@ test "an undecodable entity returns the whole string untouched" {
   assert_eq(@s3.xml_unescape("&#34;a&#xD800;"), "&#34;a&#xD800;")
   assert_eq(@s3.xml_unescape("&#x41;"), "A")
 }
+
+///|
+/// The write side, now delegated to moon-hutool. Pinned here because it is *not*
+/// byte-for-byte the table this SDK used to carry: hutool escapes all five
+/// reference characters, so `'` becomes `&apos;`. That is the shape the reference
+/// implementation produces, and the reader below takes it back — which is what
+/// `CompleteMultipartUpload` is judged on, since the ETag has to round-trip.
+test "escape covers the five reference characters and round-trips back" {
+  assert_eq(@s3.xml_escape("a<b&c>\"e'f"), "a&lt;b&amp;c&gt;&quot;e&apos;f")
+  assert_eq(@s3.xml_escape("&amp;lt;"), "&amp;amp;lt;")
+  assert_eq(
+    @s3.xml_unescape(@s3.xml_escape("it's a & <b>x</b> \"y\"")),
+    "it's a & <b>x</b> \"y\"",
+  )
+}
