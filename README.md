@@ -130,14 +130,45 @@ CI 供上 `S3_COS_*` 那五个变量时也跑。
 - 区域要填真实区域（签名域用它）。我们另外量到"签名区域换成别的区也回 200"，
   那是服务端不校验这条，不是这条路可以乱填的许可证。
 
-### 七牛 Kodo：这张表里它不在"可用"一侧
+### 七牛 Kodo
 
-Kodo 的 S3 兼容端点在我们的桶上判死：桶级列举回 `403 AccessDenied`，而 CDN 上确实存在的键
-在 path 与虚主机两种风格下都答 `NoSuchKey`；签名那边倒是真在校验（密钥末位改掉就
-`SignatureDoesNotMatch`）。那台端点的可达性还会漂（同一天里先答过完整错误文档、后整段连不上）。
-所以这里不给配置样例——要给的是"走原生 [`mldong/moon-kodo`](https://github.com/mldong/moon-kodo)"。
-复测的前条件是七牛那边把对象寻址与桶级列举修好；判据落在 `s3/live_vhost_test.mbt`
-那条腿上，它只在有人供 `S3_VHOST_*` 时才跑，没人供就响亮跳过并留一行"这轮没验过"。
+```moonbit
+test "Kodo 这一档：S3 形端点、虚主机，区域由端点而不是签名域决定" {
+  let credentials = @sigv4.Credentials::new("ak", "sk")
+  let config = @sdk.Config::new(
+    "https://s3.cn-south-1.qiniucs.com",
+    "cn-south-1",
+    credentials,
+    addressing_style=@sdk.AddressingStyle::VirtualHosted,
+  )
+  let client = @sdk.Client::new(config, @transport.AsyncHttpTransport::new())
+  let url = client.presigned_get_url("examplebucket", "docs/a.txt", 900)
+  assert_true(url.has_prefix("https://examplebucket.s3.cn-south-1.qiniucs.com/docs/a.txt"))
+  assert_true(url.find("X-Amz-Signature=") is Some(_))
+}
+```
+
+这块**曾经被记成"不支持"**，那是量错了对象：所有读数都取自一个 S3 面根本没接进去的桶，
+于是看到的只有拒绝，也从没走到写入。补测之后是这样，守着它的是
+`s3/live_platform_kodo_test.mbt`（本轮在两个真桶上各跑绿一支分支）：
+
+- 兼容面在**被它曝光的桶**上是全通的：PUT 带用户元数据、HEAD、GET 逐字节、
+  `Range: bytes=0-3`、按前缀列举找得回键、收尾把自家前缀复列为 0；path 与虚主机两种寻址都通。
+  预签名 URL 由本 SDK 生成得出来（上面那块跑的就是构造与 URL 形状），
+  但**"免凭据取回"这一发在 Kodo 上没量过**——量过的是 COS 与 OSS 两家。
+- **区域由端点决定，不由签名域决定**：往 SigV4 的 scope 里塞一个 Kodo 域名表里
+  根本不存在的区域（`cn-north-9`），应答与正确区域**一字不差**；而把端点换成别的区域的
+  `s3.<region>.qiniucs.com`，它直接回 `400 IncorrectRegion`。域名表按区给：
+  `cn-east-1`／`cn-north-1`／`cn-south-1`／`us-north-1`／`ap-southeast-1..3`。
+- **接一个桶之前，先问 S3 面看得见哪些桶**（`GET /`，即 `list_buckets`）。这条线一直在用的
+  那个桶走原生接口一切正常（上传凭证、CDN 播放都在用），但在 S3 面的列举结果里没有它——
+  于是对它写入回 `403 AccessDenied`、桶内列举回 `403 AccessDenied`、
+  **真存在的键也回 `NoSuchKey`**（不存在与存在的键在这一面上应答相同，这本身就是答案）。
+  腿把这件事做成了一步：先 `list_buckets`，再按"曝光／未曝光"分支，两支各有断言，
+  所以它不会退化成只打印不判定。
+- 官方文档说 V2 与 V4 都收。本 SDK 只发 V4，V2 这一档我们没有量过。
+  原生 `mldong/moon-kodo` 仍是接七牛的首选路径——官方自己也是这个建议，
+  S3 兼容面是给"已经在用 S3 的應用改接过来"用的。
 
 ### AWS S3 自己
 
