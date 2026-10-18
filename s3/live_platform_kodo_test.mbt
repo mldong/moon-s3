@@ -19,16 +19,17 @@
 //      region, and a wrong endpoint says so directly (`400 IncorrectRegion`).
 //   2. The name this surface answers to is not always the name the console
 //      shows, and that single fact decided every refusal seen in an earlier
-//      round. The account's production Kodo bucket — fine over the native API,
-//      upload tokens and CDN playback both working — is listed as `blog` in the
-//      console, but service-level `GET /` names it `7zy6n9`. Under that name the
-//      object family works exactly like point 1; under `blog` the same surface
-//      answers `403 AccessDenied` to a listing and `404 NoSuchKey` to a key that
-//      genuinely exists (measured both ways against the same bytes: the 18137-byte
-//      object the CDN serves is read back whole through `7zy6n9`). Writing to
-//      `blog` answers `403`, and a different region's endpoint states the reason
-//      plainly (`400 IncorrectRegion`), so this is not a wrong-region artifact:
-//      the region used here is the one that bucket lives in.
+//      round. One of this account's two buckets — fine over the native API, with
+//      upload tokens and CDN playback both working — is listed in the console
+//      under a readable name, while service-level `GET /` answers a six-character
+//      internal id for it. Under that id the object family works exactly like
+//      point 1; under the console name the same surface answers `403 AccessDenied`
+//      to a listing and `404 NoSuchKey` to a key that genuinely exists (measured
+//      both ways against the same bytes: the 18137-byte object the CDN serves is
+//      read back whole through the id, byte for byte). Writing to the console name
+//      answers `403`, and a different region's endpoint states the reason plainly
+//      (`400 IncorrectRegion`), so this is not a wrong-region artifact: the region
+//      used here is the one that bucket lives in.
 //
 // So the trap on this platform is the **bucket name**, and it is silently
 // symmetric: point a client at the console name and every operation on that
@@ -671,13 +672,12 @@ async test "live Kodo: named buckets round-trip, console spellings it does not n
           "): asserting the measured refusal instead",
         )
         // Measured 2026-10-19, and the reason this branch exists for a bucket the
-        // console clearly shows: this surface names one of this account's two
-        // buckets by something other than its console name (`blog` in the console,
-        // `7zy6n9` here) — same account, same region, same creation second, and
-        // the object bytes match the CDN copy of `blog` exactly
-        // (`articles/03-state-machine.png`, 18137 bytes, sha256 prefix
-        // 218e43182598eb3e both ways). So "not in that list" means **use the
-        // listed name**, not "this bucket cannot be reached over S3".
+        // console clearly shows: this surface answers to one of this account's two
+        // buckets under a six-character internal id instead of its console name —
+        // same account, same region, same creation second, and the same object
+        // reads back byte for byte (18137 bytes, sha256 equal to the CDN copy).
+        // So "not in that list" means **use the listed name**, not "this bucket
+        // cannot be reached over S3".
         println(
           "note: a name missing from that list is not proof of unreachability — the listed names may be internal ids for buckets the console spells differently. Compare CreationDate before concluding.",
         )
