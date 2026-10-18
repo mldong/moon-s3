@@ -4,35 +4,46 @@
 //
 // Env: S3_KODO_ENDPOINT / S3_KODO_REGION / S3_KODO_BUCKET / S3_KODO_AK /
 // S3_KODO_SK, plus the optional S3_KODO_EXISTING_KEY (a key that really exists
-// in that bucket; one read-only cell uses it).
+// in that bucket; two read-only cells use it, and one of them is only meaningful
+// with it — a 404 on a key that cannot exist separates nothing).
 //
-// What two rounds against a real account established, in this order:
+// What three rounds against a real account established, in this order:
 //
-//   1. The surface works. Against a bucket it actually exposes, the whole object
-//      family round-trips: PUT with user metadata, HEAD, GET byte for byte,
+//   1. The surface works. Against a bucket whose name it answers to, the whole
+//      object family round-trips: PUT with user metadata, HEAD, GET byte for byte,
 //      `Range: bytes=0-3`, a listing that finds the key, and a sweep of the
 //      case's own prefix down to zero residue. Both addressing styles work. And
 //      the region carried inside the SigV4 scope is not what this surface looks
 //      at: a region that is not even in Kodo's table (`cn-north-9`) answers
 //      character for character the same as the real one. The endpoint carries the
 //      region, and a wrong endpoint says so directly (`400 IncorrectRegion`).
-//   2. Whether a bucket is exposed is a separate question and it decides
-//      everything. The account's production Kodo bucket — fine over the native
-//      API, upload tokens and CDN playback both working — is **not** in this
-//      surface's view: service-level `GET /` lists other buckets and not it,
-//      listing its objects answers `403 AccessDenied`, writing answers
-//      `403 AccessDenied`, and a key that genuinely exists answers `NoSuchKey` in
-//      both styles. A different region's endpoint states the reason plainly
-//      (`400 IncorrectRegion`), so that is not a wrong-region artifact: the
-//      region used here is the one that bucket lives in.
+//   2. The name this surface answers to is not always the name the console
+//      shows, and that single fact decided every refusal seen in an earlier
+//      round. The account's production Kodo bucket — fine over the native API,
+//      upload tokens and CDN playback both working — is listed as `blog` in the
+//      console, but service-level `GET /` names it `7zy6n9`. Under that name the
+//      object family works exactly like point 1; under `blog` the same surface
+//      answers `403 AccessDenied` to a listing and `404 NoSuchKey` to a key that
+//      genuinely exists (measured both ways against the same bytes: the 18137-byte
+//      object the CDN serves is read back whole through `7zy6n9`). Writing to
+//      `blog` answers `403`, and a different region's endpoint states the reason
+//      plainly (`400 IncorrectRegion`), so this is not a wrong-region artifact:
+//      the region used here is the one that bucket lives in.
+//
+// So the trap on this platform is the **bucket name**, and it is silently
+// symmetric: point a client at the console name and every operation on that
+// bucket reads as a permission failure. The only reliable way to get the name is
+// to ask the surface (ListBuckets) and match it against `CreationDate`, which is
+// carried through in the readings below.
 //
 // An earlier note here claimed Kodo's S3 surface was dead. It was measured only
-// against an unexposed bucket, which is why it saw nothing but refusals — and it
-// never wrote an object, so it never reached the half that works.
+// against the console spelling of one bucket, which is why it saw nothing but
+// refusals — and it never wrote an object, so it never reached the half that
+// works.
 //
-// Hence the precondition this file automates: ask the surface which buckets it
-// exposes before judging anything else. The classified case below takes one of
-// two branches, each with its own assertions, so it cannot degenerate into a
+// Hence the precondition this file automates: ask the surface which bucket names
+// it answers to before judging anything else. The classified case below takes one
+// of two branches, each with its own assertions, so it cannot degenerate into a
 // block that only prints.
 //
 // Writes land only under `moonfs-live-<YYYYMMDD>/kodo-*` in the named bucket, and
@@ -192,38 +203,64 @@ async fn kodo_guarded(
 
 ///|
 /// Which buckets does this surface expose for this credential? Every judgement
-/// below is classified by this answer.
+/// below is classified by this answer — so a call that **dies** must not be
+/// allowed to read as "nothing is exposed". Three takes, and only transport
+/// deaths are retried; if none of them answer, this says so and stops.
 async fn kodo_visible_buckets(
   endpoint : String,
   region : String,
   access_key : String,
   secret_key : String,
 ) -> Array[String] {
-  let calls : Array[LiveCall] = []
-  let client = kodo_client(
-    endpoint,
-    region,
-    access_key,
-    secret_key,
-    @s3.AddressingStyle::Path,
-    calls,
-  )
-  let names : Array[String] = []
-  let reading = try {
-    let page = client.list_buckets({
-      prefix: None,
-      continuation_token: None,
-      max_buckets: Some(200),
-    })
-    for bucket in page.buckets {
-      names.push(bucket.name)
+  let attempts : Array[Int32] = [0]
+  while attempts[0] < 3 {
+    attempts[0] = attempts[0] + 1
+    let take = attempts[0].to_string()
+    let calls : Array[LiveCall] = []
+    let client = kodo_client(
+      endpoint,
+      region,
+      access_key,
+      secret_key,
+      @s3.AddressingStyle::Path,
+      calls,
+    )
+    let names : Array[String] = []
+    let failure = try {
+      let page = client.list_buckets({
+        prefix: None,
+        continuation_token: None,
+        max_buckets: Some(200),
+      })
+      for bucket in page.buckets {
+        names.push(bucket.name)
+      }
+      ""
+    } catch {
+      error => render_error(error)
     }
-    "listed " + names.length().to_string()
-  } catch {
-    error => render_error(error)
+    if failure == "" {
+      println(
+        "kodo list_buckets (take " +
+        take +
+        ") -> listed " +
+        names.length().to_string() +
+        " : " +
+        names.join(","),
+      )
+      return names
+    }
+    println("kodo list_buckets (take " + take + ") -> " + failure)
+    if failure.find("Transport") is None {
+      fail(
+        "the classification call ListBuckets failed at the protocol layer, not retried: " +
+        failure,
+      )
+    }
   }
-  println("kodo list_buckets -> " + reading + " : " + names.join(","))
-  names
+  fail(
+    "ListBuckets never answered three times in a row: exposure is NOT measured, and no branch below is allowed to conclude anything from that",
+  )
 }
 
 ///|
@@ -315,7 +352,10 @@ async fn kodo_measure_matrix(
       readings[1].find("Transport") is Some(_)
     if flaky {
       fail(
-        "matrix cell died at the transport layer — equality needs both answers from the service",
+        "matrix cell died at S3Error.Transport — equality needs both answers from the service: " +
+        readings[0] +
+        " || " +
+        readings[1],
       )
     }
     assert_eq(readings[0], readings[1])
@@ -443,11 +483,76 @@ async fn kodo_object_family(
 }
 
 ///|
-/// The other kind: a bucket the surface does not expose. The refusal is a
-/// measured fact (reproduced in both styles and with either scope region), so it
-/// is asserted. The day such a bucket gets exposed, this case goes red **here** —
-/// that red is the message, and what changes then is the branch below, not the
-/// shape of the request.
+/// The promise of a presigned URL is that it works with no credentials at all —
+/// and that one flipped character in the signature kills it. Measured here for
+/// the same reason as everywhere else in this file: the vendor page says the
+/// surface is S3-compatible, and only a run says whether this client's presigned
+/// shape is answered.
+async fn kodo_presigned_get(
+  started : Array[Int64],
+  endpoint : String,
+  region : String,
+  bucket : String,
+  access_key : String,
+  secret_key : String,
+) -> Unit {
+  let calls : Array[LiveCall] = []
+  let client = kodo_client(
+    endpoint,
+    region,
+    access_key,
+    secret_key,
+    @s3.AddressingStyle::VirtualHosted,
+    calls,
+  )
+  let prefix = live_case_prefix("kodo-presign")
+  let key = prefix + "share.txt"
+  let payload = @utf8.encode("presigned through Kodo's S3 surface\n".view())
+  let _ = client.put_object({
+    bucket,
+    key,
+    body: @transport.RequestBody::Bytes(payload),
+    content_type: Some("text/plain"),
+    metadata: Map([]),
+  })
+  live_step(started, calls, "sign a GET for 900s")
+  let url = client.presigned_get_url(bucket, key, 900)
+  assert_true(url.find("X-Amz-Signature=") is Some(_))
+  assert_true(url.has_prefix("https://" + bucket + "."))
+  let bare : &@transport.Transport = @transport.AsyncHttpTransport::new()
+  live_step(started, calls, "anonymous GET with the signed URL")
+  let response = bare.send({
+    http_method: Get,
+    url,
+    headers: [],
+    body: @transport.RequestBody::Empty,
+  })
+  println("presigned GET status=" + response.status.to_string())
+  assert_eq(response.status, 200)
+  assert_true(drain(response.body).equal(payload))
+  live_step(started, calls, "anonymous GET with one flipped character")
+  let tampered = bare.send({
+    http_method: Get,
+    url: tamper_signature(url),
+    headers: [],
+    body: @transport.RequestBody::Empty,
+  })
+  println("tampered GET status=" + tampered.status.to_string())
+  assert_eq(tampered.status, 403)
+  let _ = drain(tampered.body)
+  let _ = client.delete_object({ bucket, key, })
+  live_sweep_verified(client, bucket, prefix)
+}
+
+///|
+/// The other kind: a bucket the surface does not answer to by the name the
+/// console uses. Both halves are measured facts (reproduced in both styles and
+/// with either scope region), so both are asserted — and the second half is the
+/// one that matters: the same key answers **200 under the name from the listing**
+/// and **404 under this name**, which is what makes this a naming difference and
+/// not a lost permission. If either answer changes shape, this case goes red
+/// **here**, and what changes then is the branch in the test below, not the shape
+/// of the request.
 async fn kodo_invisible_bucket(
   started : Array[Int64],
   endpoint : String,
@@ -465,7 +570,7 @@ async fn kodo_invisible_bucket(
     @s3.AddressingStyle::VirtualHosted,
     calls,
   )
-  live_step(started, calls, "LIST on a bucket outside the S3 view")
+  live_step(started, calls, "LIST on a bucket the surface does not name")
   let listing = try {
     let page = client.list_objects({
       bucket,
@@ -478,8 +583,27 @@ async fn kodo_invisible_bucket(
   } catch {
     error => render_error(error)
   }
-  println("unexposed bucket LIST -> " + listing)
+  println("unnamed bucket LIST -> " + listing)
   assert_true(listing.has_prefix("403"))
+  match kodo_env("S3_KODO_EXISTING_KEY") {
+    None =>
+      println(
+        "unnamed bucket GET NOT MEASURED: S3_KODO_EXISTING_KEY is unset, so this cannot separate a naming difference from a lost permission",
+      )
+    Some(existing) => {
+      live_step(started, calls, "GET a key that exists under the listed name")
+      let reading = try {
+        let response = client.get_object({ bucket, key: existing, range: None, })
+        let declared = response.content_length.to_string()
+        response.body.close()
+        "read back content_length=" + declared
+      } catch {
+        error => render_error(error)
+      }
+      println("unnamed bucket GET " + existing + " -> " + reading)
+      assert_true(reading.has_prefix("404"))
+    }
+  }
 }
 
 ///|
@@ -502,7 +626,7 @@ async test "live Kodo: read-only cells, both styles, with the scope region varie
 /// One entry point, two branches, both judged — and the branch is taken from what
 /// the service itself reports, so the case cannot quietly stop exercising the
 /// useful half.
-async test "live Kodo: exposed buckets round-trip, unexposed ones are refused" {
+async test "live Kodo: named buckets round-trip, console spellings it does not name are refused" {
   match read_kodo_env() {
     None => report_kodo_skip()
     Some(environment) => {
@@ -518,7 +642,9 @@ async test "live Kodo: exposed buckets round-trip, unexposed ones are refused" {
       }
       if visible.contains(bucket) {
         println(
-          "kodo bucket " + bucket + " is exposed: running the object family",
+          "kodo bucket " +
+          bucket +
+          " is named by the surface: running the object family",
         )
         kodo_guarded(
           environment.0,
@@ -528,13 +654,32 @@ async test "live Kodo: exposed buckets round-trip, unexposed ones are refused" {
           environment.4,
           kodo_object_family,
         )
+        kodo_guarded(
+          environment.0,
+          environment.1,
+          environment.2,
+          environment.3,
+          environment.4,
+          kodo_presigned_get,
+        )
       } else {
         println(
           "kodo bucket " +
           bucket +
-          " is NOT exposed by the S3 surface (it lists: " +
+          " is NOT named by the S3 surface (it lists: " +
           visible.join(",") +
           "): asserting the measured refusal instead",
+        )
+        // Measured 2026-10-19, and the reason this branch exists for a bucket the
+        // console clearly shows: this surface names one of this account's two
+        // buckets by something other than its console name (`blog` in the console,
+        // `7zy6n9` here) — same account, same region, same creation second, and
+        // the object bytes match the CDN copy of `blog` exactly
+        // (`articles/03-state-machine.png`, 18137 bytes, sha256 prefix
+        // 218e43182598eb3e both ways). So "not in that list" means **use the
+        // listed name**, not "this bucket cannot be reached over S3".
+        println(
+          "note: a name missing from that list is not proof of unreachability — the listed names may be internal ids for buckets the console spells differently. Compare CreationDate before concluding.",
         )
         kodo_guarded(
           environment.0,
