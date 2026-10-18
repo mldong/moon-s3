@@ -75,13 +75,18 @@ for rel in files:
     if not os.path.exists(path):
         continue
     src = io.open(path, encoding="utf-8").read()
-    found = re.search(r"## 最小用法\s+```moonbit\n(.*?)\n```", src, re.S)
-    if not found:
-        print("skip (no 最小用法 block): %s" % rel)
+    # 抽**所有** ```moonbit 块，不只是「最小用法」那一个：按平台的配置样例也写在这份文档里，
+    # 而"文档里的形状就是抄了能跑的东西"这条判据不该只覆盖其中一节。
+    # 反过来说，往 README 里塞一块跑不动的进代码，这条门禁就当场红——这是本意，不是副作用。
+    codes = re.findall(r"```moonbit\n(.*?)\n```", src, re.S)
+    if not codes:
+        print("skip (no moonbit block): %s" % rel)
         continue
-    code = found.group(1)
-    if "async test" not in code and "test \"" not in code:
-        raise SystemExit("README block without a test: %s" % rel)
+    print("blocks=%d in %s" % (len(codes), rel))
+    for code in codes:
+        if "async test" not in code and "test \"" not in code:
+            raise SystemExit("README block without a test: %s" % rel)
+    code = "\n".join(codes)
     name = re.sub(r"[^a-z0-9]+", "_", rel.replace("/README.md", "").replace(".md", ""))
     io.open(os.path.join(check, "readme_%s_test.mbt" % name), "w",
             encoding="utf-8", newline="\n").write(code + "\n")
