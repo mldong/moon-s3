@@ -64,7 +64,7 @@ jobs:
     env:
       # 现读不是抄来的：`moon test --target wasm` 本机跑出来的总档数（含两条兼容平台腿各 4 档）。
       # 动过用例就重跑一遍再读，别把这个数当契约继承。
-      EXPECTED_TESTS: "57"
+      EXPECTED_TESTS: "59"
       # SKIP 的期望值在 Test 那一步里**按 secret 到位情况算**（want_skips），
       # 不再钉死：钉死会让"某档没人供凭据"变成永久安静跳过，而那等于没有套件。
       MINIO_USER: moonfsci
@@ -194,6 +194,11 @@ jobs:
           want_skips=1
           [ -z "${S3_COS_AK:-}" ] && want_skips=$((want_skips + 4))
           [ -z "${S3_OSS_AK:-}" ] && want_skips=$((want_skips + 4))
+          # Kodo 那两档在 CI 里固定跳过，是**有意**的：一条腿会先问 S3 面"你看得见哪些桶"，
+          # 而答案取决于账号里哪个桶被接进这道门——那是账号状态，不该钉成 CI 的 secret，
+          # 否则哪天桶的可见性一变，门禁红的原因跟代码毫无关系。它在本地门禁脚本里真跑
+          # （两种桶各一条断言分支都覆盖过）。
+          [ -z "${S3_KODO_AK:-}" ] && want_skips=$((want_skips + 2))
           if [ "$want_skips" != "1" ]; then
             echo "::warning::兼容平台腿有 $((want_skips - 1)) 档没被真跑（缺 secret）——本轮绿不含 COS／OSS"
             echo "兼容平台腿未真跑：缺 $((want_skips - 1)) 档（COS 四档／OSS 四档），本轮绿不含它们" >> "$GITHUB_STEP_SUMMARY"
