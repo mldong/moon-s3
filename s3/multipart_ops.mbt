@@ -232,7 +232,7 @@ pub async fn Client::list_parts(
   let xml = @utf8.decode_lossy(raw)
   body.close()
   let parts : Array[PartInfo] = []
-  for block in xml_all(xml, "Part") {
+  for block in xml_sections(xml, "Part") {
     let size = parse_int64_or_zero(xml_first(block, "Size"))
     let number = parse_int_or_zero(xml_first(block, "PartNumber"))
     let info : PartInfo = {

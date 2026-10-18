@@ -29,8 +29,9 @@ test "ampersand forms are decoded last so nothing is decoded twice" {
 ///|
 test "keys with punctuation survive the round through the reader" {
   let document = "<Contents><Key>reports &amp; charts/2026&#47;10&#47;16.txt</Key></Contents>"
-  // `&#47;` is a slash: outside the five predefined characters the reader leaves
-  // it alone on purpose, so this asserts the *known* part only.
+  // `&#47;` is a slash. The old local table left decimal references alone; the
+  // hutool reader decodes them (that is what the reference implementation does),
+  // so this asserts the `&amp;` part, which both generations must agree on.
   let key = @s3.xml_first(document, "Key")
   match key {
     Some(value) => {
@@ -39,4 +40,37 @@ test "keys with punctuation survive the round through the reader" {
     }
     None => fail("the key did not parse")
   }
+}
+
+///|
+/// The defect this round found and fixed. `xml_all` on a container decoded the
+/// whole inner text, then the leaf read decoded it again, so a key stored
+/// literally as `a&lt;b` — which the endpoint answers as
+/// `<Key>a&amp;lt;b</Key>` — came back as `a<b`. The listing is then fed to
+/// copy and delete, so the second decode addresses a different object.
+/// `xml_sections` returns the segment undecoded, so exactly one pass happens.
+test "a container segment is decoded once, not twice" {
+  let document = "<ListBucketResult><Contents><Key>a&amp;lt;b</Key>" +
+    "<Size>3</Size></Contents></ListBucketResult>"
+  let blocks = @s3.xml_sections(document, "Contents")
+  assert_eq(blocks.length(), 1)
+  if !blocks[0].contains("a&amp;lt;b") {
+    fail("splitting a container must not decode: " + blocks[0])
+  }
+  assert_eq(@s3.xml_first(blocks[0], "Key"), Some("a&lt;b"))
+  // The old two-pass shape, kept here so nobody reintroduces it by reaching for
+  // `xml_all` on a container again.
+  assert_eq(
+    @s3.xml_first(@s3.xml_all(document, "Contents")[0], "Key"),
+    Some("a<b"),
+  )
+}
+
+///|
+/// Not promised to equal the old table: a lone surrogate cannot be represented in
+/// a MoonBit `String`, so the whole string comes back untouched rather than the
+/// leading tokens decoded. Decoding happens per string or not at all.
+test "an undecodable entity returns the whole string untouched" {
+  assert_eq(@s3.xml_unescape("&#34;a&#xD800;"), "&#34;a&#xD800;")
+  assert_eq(@s3.xml_unescape("&#x41;"), "A")
 }

@@ -1,5 +1,6 @@
 import {
   "mldong/moon-hutool/http" @transport,
+  "mldong/moon-hutool/text",
   "mldong/moon-s3/sigv4",
   "mldong/moon-hutool/date",
   "mldong/moon-hutool/digest",

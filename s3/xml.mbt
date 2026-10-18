@@ -51,39 +51,60 @@ pub fn xml_all(text : String, tag : String) -> Array[String] {
 }
 
 ///|
-/// The five predefined XML entities, in **both** spellings S3 uses. `&amp;` is
-/// decoded last so that `&amp;lt;` does not collapse into `<`.
+/// Splitting a **container** element out of a document, in document order. Unlike
+/// `xml_all`, the segments are returned with escapes **not** decoded: a container
+/// holds leaves, and each leaf gets its own decode when it is read.
 ///
-/// The numeric spellings are not optional: MinIO writes the ETag of a part as
-/// `&#34;…&#34;` in `ListPartsResult` (measured), so a reader that only knows the
-/// named forms hands the completion document a tag the server cannot match, and
-/// the upload dies as `InvalidPart`. Anything beyond these five (hexadecimal
-/// references, arbitrary code points) is outside what these endpoints emit and is
-/// left alone rather than half-implemented.
-pub fn xml_unescape(text : String) -> String {
-  // 两组"变成 &"的写法必须一起放在最后：先解 `&#38;` 的话，`&#38;lt;` 会被读成
-  // `&lt;` 再被下一轮解成 `<`——一次转义被解了两次。
-  let numeric = replace_all_pairs(text, [
-    ("&#34;", "\""),
-    ("&#39;", "'"),
-    ("&#60;", "<"),
-    ("&#62;", ">"),
-  ])
-  let lt = numeric.replace_all(old="&lt;", new="<")
-  let gt = lt.replace_all(old="&gt;", new=">")
-  let quot = gt.replace_all(old="&quot;", new="\"")
-  let apos = quot.replace_all(old="&apos;", new="'")
-  let amp = apos.replace_all(old="&amp;", new="&")
-  amp.replace_all(old="&#38;", new="&")
+/// This is the fix for a measured defect: `xml_all(doc, "Contents")` decoded the
+/// whole inner text, then `xml_first(block, "Key")` decoded it a second time, so a
+/// key that literally contains entity spellings came back rewritten
+/// (`a&amp;lt;b` read as `a<b`). That key is then used for copy and delete, so the
+/// second decode does not merely print wrong — it addresses the wrong object.
+/// Idempotent shapes (`&#34;q&#34;` decodes fully on the first pass) hid this from
+/// every existing assertion, which is why the case is pinned in a test.
+pub fn xml_sections(text : String, tag : String) -> Array[String] {
+  let open = "<" + tag + ">"
+  let close = "</" + tag + ">"
+  let out : Array[String] = []
+  let mut cursor = 0
+  while cursor < text.length() {
+    let rest = text[cursor:text.length()].to_owned()
+    match rest.find(open) {
+      None => cursor = text.length()
+      Some(open_at) => {
+        let body_start = cursor + open_at + open.length()
+        let tail = text[body_start:text.length()].to_owned()
+        match tail.find(close) {
+          None => cursor = text.length()
+          Some(close_at) => {
+            out.push(text[body_start:body_start + close_at].to_owned())
+            cursor = body_start + close_at + close.length()
+          }
+        }
+      }
+    }
+  }
+  out
 }
 
 ///|
-fn replace_all_pairs(text : String, pairs : Array[(String, String)]) -> String {
-  let mut out = text
-  for pair in pairs {
-    out = out.replace_all(old=pair.0, new=pair.1)
+/// Entity decoding belongs to moon-hutool (`@text.unescape_xml`); this SDK no
+/// longer carries its own table. The two agree on every shape S3 and its
+/// compatible endpoints actually return (a part ETag arrives as `&#34;…&#34;` in
+/// `ListPartsResult` — measured — and a reader that only knows the named forms
+/// would hand the completion document a tag the server cannot match, dying as
+/// `InvalidPart`). hutool is the superset: it also decodes hexadecimal and
+/// arbitrary decimal references, which is what the reference implementation does.
+///
+/// One case is deliberately **not** equivalent to the old local table: hutool
+/// raises, and this hands back the whole string unchanged rather than decoding the
+/// leading tokens. A lone surrogate (`&#xD800;`) is a shape MoonBit `String`
+/// cannot hold, so refusing the whole string is more honest than a half-decoded
+/// result. No per-token fallback is promised.
+pub fn xml_unescape(text : String) -> String {
+  @text.unescape_xml(text) catch {
+    _ => text
   }
-  out
 }
 
 ///|

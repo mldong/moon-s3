@@ -23,6 +23,8 @@ pub fn xml_escape(String) -> String
 
 pub fn xml_first(String, String) -> String?
 
+pub fn xml_sections(String, String) -> Array[String]
+
 pub fn xml_unescape(String) -> String
 
 // Errors

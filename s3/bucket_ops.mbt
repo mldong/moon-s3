@@ -86,7 +86,7 @@ pub async fn Client::list_buckets(
   let xml = @utf8.decode_lossy(raw)
   body.close()
   let buckets : Array[BucketInfo] = []
-  for block in xml_all(xml, "Bucket") {
+  for block in xml_sections(xml, "Bucket") {
     let info : BucketInfo = {
       name: read_required(block, "Name", ""),
       creation_date: xml_first(block, "CreationDate"),

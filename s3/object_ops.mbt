@@ -224,7 +224,7 @@ pub async fn Client::list_objects(
   body.close()
   let xml = response_text(raw, response.status)
   let objects : Array[ObjectInfo] = []
-  for block in xml_all(xml, "Contents") {
+  for block in xml_sections(xml, "Contents") {
     let info : ObjectInfo = {
       key: match xml_first(block, "Key") {
         Some(value) => value
@@ -254,7 +254,7 @@ pub async fn Client::list_objects(
 /// the two, so only the wrapped ones are taken.
 fn common_prefixes_of(xml : String) -> Array[String] {
   let out : Array[String] = []
-  for block in xml_all(xml, "CommonPrefixes") {
+  for block in xml_sections(xml, "CommonPrefixes") {
     match xml_first(block, "Prefix") {
       Some(prefix) => out.push(prefix)
       None => ()
