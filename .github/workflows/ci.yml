@@ -62,8 +62,11 @@ jobs:
     name: Check / Build / Test (wasm + native, live MinIO)
     runs-on: ubuntu-latest
     env:
-      EXPECTED_TESTS: "49"
-      EXPECTED_SKIPS: "1"
+      # 现读不是抄来的：`moon test --target wasm` 本机跑出来的总档数（含两条兼容平台腿各 4 档）。
+      # 动过用例就重跑一遍再读，别把这个数当契约继承。
+      EXPECTED_TESTS: "57"
+      # SKIP 的期望值在 Test 那一步里**按 secret 到位情况算**（want_skips），
+      # 不再钉死：钉死会让"某档没人供凭据"变成永久安静跳过，而那等于没有套件。
       MINIO_USER: moonfsci
       MINIO_PASS: moonfsci-pw-1
       BUCKET: moonfs-ci-${{ github.run_id }}-${{ github.run_attempt }}
@@ -164,6 +167,20 @@ jobs:
           S3_ACL_REFUSE_AK: ${{ env.MINIO_USER }}
           S3_ACL_REFUSE_SK: ${{ env.MINIO_PASS }}
           MOONFS_RUN_TAG: ${{ github.run_id }}-${{ github.run_attempt }}
+          # 两条兼容平台腿打的是真公网桶。基址由区域拼出来（COS 只认虚主机，OSS 两种
+          # 基址都被实测回拒 path 风格，见那两个文件头上的说明），凭据只走 secret。
+          # secret 没到位时那四档会响亮跳过，并被下面的 want_skips 算进判据——
+          # 缺凭据不会静默变绿，只会在 summary 里点名"本轮绿不含它们"。
+          S3_COS_ENDPOINT: https://cos.${{ secrets.COS_REGION }}.myqcloud.com
+          S3_COS_REGION: ${{ secrets.COS_REGION }}
+          S3_COS_BUCKET: ${{ secrets.COS_BUCKET }}
+          S3_COS_AK: ${{ secrets.COS_AK }}
+          S3_COS_SK: ${{ secrets.COS_SK }}
+          S3_OSS_ENDPOINT: https://oss-${{ secrets.OSS_REGION }}.aliyuncs.com
+          S3_OSS_REGION: ${{ secrets.OSS_REGION }}
+          S3_OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
+          S3_OSS_AK: ${{ secrets.OSS_AK }}
+          S3_OSS_SK: ${{ secrets.OSS_SK }}
         run: |
           # pipefail 不许省：GH 默认只给 -e，`moon test | tee` 的退出码是 tee 的 0，
           # 真红的用例会被这条管道吃掉、只剩"Total tests" 那半句自证过关。
@@ -171,11 +188,21 @@ jobs:
           set -o pipefail
           moon test --target wasm -j 1 --no-render | tee wasm-test.txt
           moon test --target native -j 1 --no-render | tee native-test.txt
+          # 基准那一档是七牛那条公网 vhost 腿——runner 给不出可达地址，它每轮都响亮跳过。
+          # 兼容平台腿的凭据到位几组，就少几档跳过；一组都没到位时这一轮**不含** COS／OSS，
+          # 那句话必须出现在日志与 summary 里，不许被"49 条全绿"这种形状盖掉。
+          want_skips=1
+          [ -z "${S3_COS_AK:-}" ] && want_skips=$((want_skips + 4))
+          [ -z "${S3_OSS_AK:-}" ] && want_skips=$((want_skips + 4))
+          if [ "$want_skips" != "1" ]; then
+            echo "::warning::兼容平台腿有 $((want_skips - 1)) 档没被真跑（缺 secret）——本轮绿不含 COS／OSS"
+            echo "兼容平台腿未真跑：缺 $((want_skips - 1)) 档（COS 四档／OSS 四档），本轮绿不含它们" >> "$GITHUB_STEP_SUMMARY"
+          fi
           for f in wasm-test.txt native-test.txt; do
             grep -q "Total tests: $EXPECTED_TESTS, passed: $EXPECTED_TESTS, failed: 0" "$f"
             skips=$(grep -c "SKIP IS NOT A PASS" "$f" || true)
-            echo "$f：$EXPECTED_TESTS 条全绿已核，SKIP 行数=$skips（应为 $EXPECTED_SKIPS）"
-            test "$skips" = "$EXPECTED_SKIPS"
+            echo "$f：$EXPECTED_TESTS 条全绿已核，SKIP 行数=$skips（应为 $want_skips）"
+            test "$skips" = "$want_skips"
           done
           grep -E "^SKIP IS NOT A PASS" wasm-test.txt | sed 's/^/  跳过的是：/' \
             | tee -a "$GITHUB_STEP_SUMMARY" || true
