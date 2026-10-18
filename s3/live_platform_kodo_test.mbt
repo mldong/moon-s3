@@ -7,7 +7,7 @@
 // in that bucket; two read-only cells use it, and one of them is only meaningful
 // with it — a 404 on a key that cannot exist separates nothing).
 //
-// What three rounds against a real account established, in this order:
+// What the surface answers, measured against a real account:
 //
 //   1. The surface works. Against a bucket whose name it answers to, the whole
 //      object family round-trips: PUT with user metadata, HEAD, GET byte for byte,
@@ -18,15 +18,12 @@
 //      character for character the same as the real one. The endpoint carries the
 //      region, and a wrong endpoint says so directly (`400 IncorrectRegion`).
 //   2. The name this surface answers to is not always the name the console
-//      shows, and that single fact decided every refusal seen in an earlier
-//      round. Qiniu states the rule on its 服务域名 page (`/kodo/4088`) and on the
+//      shows. Qiniu states the rule on its 服务域名 page (`/kodo/4088`) and on the
 //      console itself, not on the AWS-S3-compatibility page: 空间名称要求全局唯一；
 //      **如不唯一，将使用自动生成的空间名称** — so a bucket named with a common word
 //      answers to a generated short name over S3, while a rare one keeps its own.
 //      Where to read the real value: `GET /` (Get Service) reports it, and the
 //      console shows it as 空间概览 → 系统域名 → "S3 协议的外网访问".
-//      Nothing to do with the age of the bucket, which is what an earlier note
-//      here guessed.
 //      Under the name from `GET /` the object family works exactly like point 1;
 //      under the console name the same surface answers `403 AccessDenied` to a
 //      listing and `404 NoSuchKey` to a key that genuinely exists (measured both
@@ -36,21 +33,15 @@
 //      reason plainly (`400 IncorrectRegion`), so this is not a wrong-region
 //      artifact: the region used here is the one that bucket lives in.
 //
-// So the trap on this platform is the **bucket name**, and it is silently
-// symmetric: point a client at the console name and every operation on that
-// bucket reads as a permission failure. The only reliable way to get the name is
-// to ask the surface (ListBuckets) and match it against `CreationDate`, which is
-// carried through in the readings below.
-//
-// An earlier note here claimed Kodo's S3 surface was dead. It was measured only
-// against the console spelling of one bucket, which is why it saw nothing but
-// refusals — and it never wrote an object, so it never reached the half that
-// works.
-//
-// Hence the precondition this file automates: ask the surface which bucket names
-// it answers to before judging anything else. The classified case below takes one
-// of two branches, each with its own assertions, so it cannot degenerate into a
-// block that only prints.
+// So the trap on this platform is the **bucket name**: point a client at a name
+// this surface does not answer to and every operation on that bucket reads as a
+// permission failure. Hence the precondition this file automates — ask the
+// surface which bucket names it answers to first (`GET /`; `CreationDate` is what
+// ties a generated name back to a console bucket), then judge only what answers.
+// The classified case takes one of two branches, each with its own assertions, so
+// it cannot degenerate into a block that only prints; the branch whose name is not
+// answered to also reads a key that genuinely exists, because that is the only
+// reading which tells a wrong name apart from a lost permission.
 //
 // Writes land only under `moonfs-live-<YYYYMMDD>/kodo-*` in the named bucket, and
 // each case deletes what it made. Missing env, or an endpoint that never answers
@@ -412,8 +403,8 @@ async fn kodo_measure_matrix(
 }
 
 ///|
-/// The object family against a bucket the surface exposes — the half the earlier
-/// round never reached, and the reason its verdict was wrong.
+/// The object family against a name the surface answers to. This is the half that
+/// decides whether the surface works at all — refusals measured on one name don't.
 async fn kodo_object_family(
   started : Array[Int64],
   endpoint : String,
