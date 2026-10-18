@@ -1,13 +1,13 @@
 ///|
 // Virtual-hosted addressing against an endpoint that really parses the bucket
 // out of `Host`. This is the reading stage A could not get: the shared MinIO at
-// that server ignores the bucket name in `Host` entirely, so every virtual-hosted request
-// there answers 200 with the *account's* bucket list — a status code that proves
-// nothing (阶段 A 卡 §7-20).
+// that server ignores the bucket name in `Host` entirely, so every virtual-hosted
+// request there answers 200 with the *account's* bucket list: a measured reading,
+// reproduced below, and a status code that proves nothing on its own.
 //
-// The vehicle is instead Qiniu's S3-compatible endpoint, which the same round
-// measured (see the C 卡 §7 write-back): it resolves `<bucket>.<endpoint>` per
-// request. Nothing here is written — both cases expect an error document, and the
+// The vehicle is instead somebody else's public S3-compatible endpoint, supplied
+// through `S3_VHOST_*`: unlike that MinIO, it resolves `<bucket>.<endpoint>`
+// per request. Nothing here is written — both cases expect an error document, and the
 // judgment is the `<Resource>` the **service** filled in, i.e. which name it read
 // out of our request. A 404 on its own would not distinguish "the endpoint
 // resolved our bucket and the key is not there" from "the request never named a

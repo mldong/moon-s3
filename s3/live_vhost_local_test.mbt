@@ -1,8 +1,10 @@
 ///|
 // Virtual-hosted addressing driven by **our client** against a one-shot S3
-// endpoint, given by `S3_VHL_ENDPOINT`. Stage A could only assert the URL string,
-// because the shared MinIO ignores the bucket name in `Host` entirely
-// (A 卡 §7-20), and this box has no container runtime (C 卡 §7-7).
+// endpoint, given by `S3_VHL_ENDPOINT`. Asserting the URL string alone is not
+// enough: a MinIO that ignores the bucket name in `Host` answers 200 for any
+// bucket, so the service has to resolve the name itself — and the vehicles that
+// can do that are not always available (no container runtime on this box), which
+// is why the second vehicle below exists.
 //
 // Two vehicles have run this case, and they cover different halves:
 //   - a MinIO started for this round with `MINIO_DOMAIN` (the brand-level read) —
