@@ -199,8 +199,9 @@ test "OBS 这一档：端点是 obs.<region>，而且只认虚主机" {
   而且是在它自家基址上也一样拒（COS／OSS 只在区域端点上拒 path，这家更硬）。
 - **区域填错与"桶不存在"同码同形**：两种情况都回 `404 NoSuchBucket`，所以在这家上
   `404` 不能当"没这个桶"的证据——七牛那边会直接给 `400 IncorrectRegion`，两家的判读方式不同。
-- **分片不校验下限**：100KiB 的非末片 + 1KiB 的末片，`COMPLETE` 照样 200。
-  AWS 那个 5MiB 下限在这里不生效 ⇒ "在 OBS 上跑通了"不能当作换到别家也跑通的证据。
+- **分片下限是 100KiB，不是 AWS 的 5MiB**：非末片给 100KiB 就 `COMPLETE` 200，给 99KiB 回
+  `400 EntityTooSmall`（原生面另量过 50KiB，同样拒）。⇒ 照 AWS 5MiB 写死下限的客户端在这家偏保守，
+  而"在 OBS 上跑通了"也不能当作换到别家也跑通的证据。
 
 其余实测：对象族整条往返全通（PUT 带用户元数据／HEAD／GET 逐字节／`Range: bytes=0-3` 206／
 列举 v1 与 v2 都收／收尾复列 0）；canned ACL 真生效且可逆（`public-read` 后匿名 GET 200，
