@@ -64,7 +64,7 @@ jobs:
     env:
       # 现读不是抄来的：`moon test --target wasm` 本机跑出来的总档数（含两条兼容平台腿各 4 档）。
       # 动过用例就重跑一遍再读，别把这个数当契约继承。
-      EXPECTED_TESTS: "59"
+      EXPECTED_TESTS: "64"
       # SKIP 的期望值在 Test 那一步里**按 secret 到位情况算**（want_skips），
       # 不再钉死：钉死会让"某档没人供凭据"变成永久安静跳过，而那等于没有套件。
       MINIO_USER: moonfsci
@@ -181,6 +181,13 @@ jobs:
           S3_OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
           S3_OSS_AK: ${{ secrets.OSS_AK }}
           S3_OSS_SK: ${{ secrets.OSS_SK }}
+          # 华为 OBS 只认虚主机（带桶名的 path 一律 403 VirtualHostDomainRequired），
+          # 所以基址给区域端点、寻址风格由腿自己定；见 s3/live_platform_obs_test.mbt。
+          S3_OBS_ENDPOINT: https://obs.${{ secrets.OBS_REGION }}.myhuaweicloud.com
+          S3_OBS_REGION: ${{ secrets.OBS_REGION }}
+          S3_OBS_BUCKET: ${{ secrets.OBS_BUCKET }}
+          S3_OBS_AK: ${{ secrets.OBS_AK }}
+          S3_OBS_SK: ${{ secrets.OBS_SK }}
         run: |
           # pipefail 不许省：GH 默认只给 -e，`moon test | tee` 的退出码是 tee 的 0，
           # 真红的用例会被这条管道吃掉、只剩"Total tests" 那半句自证过关。
@@ -201,6 +208,7 @@ jobs:
           # 门禁红的原因跟代码毫无关系。它在本地门禁脚本里真跑
           # （被承认／不被承认两支分支各有断言，两支都覆盖过）。
           [ -z "${S3_KODO_AK:-}" ] && { want_skips=$((want_skips + 2)); missing="$missing Kodo(2)"; }
+          [ -z "${S3_OBS_AK:-}" ] && { want_skips=$((want_skips + 5)); missing="$missing OBS(5)"; }
           if [ "$want_skips" != "1" ]; then
             echo "::warning::兼容平台腿有 $((want_skips - 1)) 档没被真跑（缺 secret）：${missing# } —— 本轮绿不含它们"
             echo "兼容平台腿未真跑：${missing# } 共 $((want_skips - 1)) 档，本轮绿不含它们" >> "$GITHUB_STEP_SUMMARY"

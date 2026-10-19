@@ -174,6 +174,42 @@ test "Kodo 这一档：S3 形端点、虚主机，区域由端点而不是签名
   原生 `mldong/moon-kodo` 仍是接七牛的首选路径——官方自己也是这个建议，
   S3 兼容面是给"已经在用 S3 的应用改接过来"用的。
 
+### 华为 OBS
+
+```moonbit
+test "OBS 这一档：端点是 obs.<region>，而且只认虚主机" {
+  let credentials = @sigv4.Credentials::new("ak", "sk")
+  let config = @sdk.Config::new(
+    "https://obs.cn-south-1.myhuaweicloud.com",
+    "cn-south-1",
+    credentials,
+    addressing_style=@sdk.AddressingStyle::VirtualHosted,
+  )
+  let client = @sdk.Client::new(config, @transport.AsyncHttpTransport::new())
+  let url = client.presigned_get_url("examplebucket", "docs/a.txt", 900)
+  assert_true(url.has_prefix("https://examplebucket.obs.cn-south-1.myhuaweicloud.com/docs/a.txt"))
+  assert_true(url.find("X-Amz-Signature=") is Some(_))
+}
+```
+
+四家里这一面对 AWS 最贴，但有三处会把照 AWS 写的客户端读反，守着它们的是
+`s3/live_platform_obs_test.mbt`（真桶五档全绿）：
+
+- **只认虚主机**：把桶名放进路径的 path 风格一律 `403 VirtualHostDomainRequired`，
+  而且是在它自家基址上也一样拒（COS／OSS 只在区域端点上拒 path，这家更硬）。
+- **区域填错与"桶不存在"同码同形**：两种情况都回 `404 NoSuchBucket`，所以在这家上
+  `404` 不能当"没这个桶"的证据——七牛那边会直接给 `400 IncorrectRegion`，两家的判读方式不同。
+- **分片不校验下限**：100KiB 的非末片 + 1KiB 的末片，`COMPLETE` 照样 200。
+  AWS 那个 5MiB 下限在这里不生效 ⇒ "在 OBS 上跑通了"不能当作换到别家也跑通的证据。
+
+其余实测：对象族整条往返全通（PUT 带用户元数据／HEAD／GET 逐字节／`Range: bytes=0-3` 206／
+列举 v1 与 v2 都收／收尾复列 0）；canned ACL 真生效且可逆（`public-read` 后匿名 GET 200，
+改回 `private` 又 403，`GET /key?acl` 读回两条 grant 并含 AllUsers 读）；
+预签名免凭据取回 200，签名改一个字符 403，凭据改末位是 400 `InvalidArgument`、
+改访问密钥中段是 403 `InvalidAccessKeyId`——**坏在哪一段决定回哪个码**，别把某一种坏法当成"签名被校验"的唯一形状。
+绑了自定义域名的话，证书要单独配：域名解析到 OBS 之后，明文 http 能进桶，
+https 会撞证书名字不匹配（这一格与 COS 那家同形状）。
+
 ### AWS S3 自己
 
 没打过真端点，不在射程内。签名那一侧有离线向量件（`sigv4/vectors_wbtest.mbt`），
