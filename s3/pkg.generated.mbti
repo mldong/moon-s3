@@ -87,8 +87,8 @@ pub async fn Client::list_buckets(Self, ListBucketsRequest) -> ListBucketsRespon
 pub async fn Client::list_objects(Self, ListObjectsRequest) -> ListObjectsResponse raise S3Error
 pub async fn Client::list_parts(Self, ListPartsRequest) -> ListPartsResponse raise S3Error
 pub fn Client::new(Config, &@http.Transport) -> Self
-pub fn Client::presigned_get_url(Self, String, String, Int) -> String raise S3Error
-pub fn Client::presigned_url(Self, String, String, @http.Method, Int) -> String raise S3Error
+pub fn Client::presigned_get_url(Self, String, String, Int32) -> String raise S3Error
+pub fn Client::presigned_url(Self, String, String, @http.Method, Int32) -> String raise S3Error
 pub async fn Client::put_object(Self, PutObjectRequest) -> PutObjectResponse raise S3Error
 pub async fn Client::put_object_acl(Self, PutObjectAclRequest) -> PutObjectAclResponse raise S3Error
 pub async fn Client::stat_object(Self, StatObjectRequest) -> StatObjectResponse raise S3Error
@@ -108,7 +108,7 @@ pub(all) struct CompleteMultipartUploadResponse {
 }
 
 pub(all) struct CompletedPart {
-  part_number : Int
+  part_number : Int32
   etag : String
 }
 
@@ -200,7 +200,7 @@ pub(all) struct GetObjectResponse {
 pub(all) struct ListBucketsRequest {
   prefix : String?
   continuation_token : String?
-  max_buckets : Int?
+  max_buckets : Int32?
 }
 
 pub(all) struct ListBucketsResponse {
@@ -213,7 +213,7 @@ pub(all) struct ListObjectsRequest {
   prefix : String?
   delimiter : String?
   continuation_token : String?
-  max_keys : Int?
+  max_keys : Int32?
 }
 
 pub(all) struct ListObjectsResponse {
@@ -227,14 +227,14 @@ pub(all) struct ListPartsRequest {
   bucket : String
   key : String
   upload_id : String
-  part_number_marker : Int?
-  max_parts : Int?
+  part_number_marker : Int32?
+  max_parts : Int32?
 }
 
 pub(all) struct ListPartsResponse {
   parts : Array[PartInfo]
   is_truncated : Bool
-  next_part_number_marker : Int?
+  next_part_number_marker : Int32?
 }
 
 pub(all) struct ObjectInfo {
@@ -245,7 +245,7 @@ pub(all) struct ObjectInfo {
 }
 
 pub(all) struct PartInfo {
-  part_number : Int
+  part_number : Int32
   etag : String
   size : Int64
   last_modified : String?
@@ -273,7 +273,7 @@ pub(all) struct PutObjectResponse {
 }
 
 pub(all) struct ServiceError {
-  status_code : Int
+  status_code : Int32
   code : String
   message : String
   request_id : String?
@@ -298,7 +298,7 @@ pub(all) struct UploadPartRequest {
   bucket : String
   key : String
   upload_id : String
-  part_number : Int
+  part_number : Int32
   body : @http.RequestBody
 }
 

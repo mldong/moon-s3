@@ -26,7 +26,7 @@ pub fn normalize_header_value(String) -> String
 
 pub fn parse_query(String) -> Array[QueryPair]
 
-pub fn presign(@http.Request, Credentials, String, String, Int) -> @http.Request raise SigningError
+pub fn presign(@http.Request, Credentials, String, String, Int32) -> @http.Request raise SigningError
 
 pub fn sign(@http.Request, Credentials, String, String, String) -> @http.Request raise SigningError
 
