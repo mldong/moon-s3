@@ -308,10 +308,12 @@ jobs:
           printf '{"token":"%s","username":"%s"}\n' "$MOON_TOKEN" "$MOON_USERNAME" \
             > "$HOME/.moon/credentials.json"
 
-      - name: Update index and install dependencies
+      - name: Update registry index
         run: |
+          # 裸 `moon install` 在 0.1.20261020 起已改成 `moon install <SOURCE> [PATH_IN_REPO]`
+          # （从 git 源装包），无参调用 exit 2，会把整条发布链拦在刷索引这一步——moon-token
+          # publish.yml 同款修复已实弹发过 0.1.53。工作区成员与依赖由各步自己解析，这里只刷索引。
           moon update
-          moon install
 
       - name: Publish (re-entrant, skip if the index already has this version)
         run: bash .github/scripts/publish-if-absent.sh . mldong/moon-s3
