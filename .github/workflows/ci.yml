@@ -237,8 +237,10 @@ jobs:
 
       - name: Assert zero warnings
         run: |
+          set -euo pipefail
+          bash scripts/own-warn.sh --selftest
           moon check --target wasm --no-render 2>&1 | tee check.txt
-          ! grep -q "Warning" check.txt
+          [ "$(bash scripts/own-warn.sh check.txt)" = "0" ]
 
       # 腿内部本来就该自删（测完回查 0 残留）；这一步是兜底：跑挂了、红在中途，也把本轮这个桶清干净，
       # 并把"清掉几个对象"作为读数打出来，不只凭"命令返回 0"说清了。数据目录随 job 销毁。

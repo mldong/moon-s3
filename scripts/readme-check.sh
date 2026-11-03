@@ -116,9 +116,9 @@ PY
 cd "$WORK"
 log=$(moon test --target wasm -j 1 ./readme_check 2>&1) || true
 printf '%s\n' "$log" | tail -5
-if printf '%s' "$log" | grep -q "Warning"; then
+if [ "$(printf '%s\n' "$log" | bash "$REPO/scripts/own-warn.sh")" != "0" ]; then
   printf '%s\n' "$log" | grep -B2 -A 8 "Warning" | head -40
-  echo "README CHECK FAIL: 抽出来的代码有警告（零警告口径下这是错误）" >&2
+  echo "README CHECK FAIL: 抽出来的代码有本仓警告（零警告口径下这是错误）" >&2
   exit 1
 fi
 if printf '%s' "$log" | grep -q "failed: 0"; then
