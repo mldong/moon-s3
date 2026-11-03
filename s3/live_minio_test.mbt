@@ -261,7 +261,7 @@ async fn live_round_trip(
   let key = prefix + "roundtrip.txt"
   let copy_key = prefix + "copied.txt"
   let sample = "moon-file-storage live link 中文 +?&=%2F 0123456789\n"
-  let payload = @utf8.encode(sample.view())
+  let payload = @utf8.encode(sample.clamped_view())
   let payload_length = payload.length()
   let digest = @hex.encode(@digest.sha256_of_bytes(payload))
   let size_text = payload_length.to_string()
@@ -389,7 +389,7 @@ async fn live_wrong_secret(
     let put_request : @s3.PutObjectRequest = {
       bucket,
       key,
-      body: @transport.RequestBody::Bytes(@utf8.encode("no".view())),
+      body: @transport.RequestBody::Bytes(@utf8.encode("no".clamped_view())),
       content_type: None,
       metadata: Map([]),
     }
@@ -463,7 +463,7 @@ async fn live_stream_body(
   let prefix = live_case_prefix("stream")
   let key = prefix + "object.txt"
   let sample = "streamed body for the unsigned payload branch\n"
-  let payload = @utf8.encode(sample.view())
+  let payload = @utf8.encode(sample.clamped_view())
   let size = payload.length().to_int64()
   let reader = @io.MemoryReader::MemoryReader(writer => writer.write(payload))
   defer reader.close()

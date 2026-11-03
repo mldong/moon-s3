@@ -426,7 +426,7 @@ async fn kodo_object_family(
   let prefix = live_case_prefix("kodo-family")
   let key = prefix + "family.txt"
   let sample = "moon-s3 compatibility leg on Kodo 中文 +?&=%2F 0123456789abcdef\n"
-  let payload = @utf8.encode(sample.view())
+  let payload = @utf8.encode(sample.clamped_view())
   let size = payload.length().to_int64()
   live_step(started, calls, "PUT")
   let put = client.put_object({
@@ -505,7 +505,9 @@ async fn kodo_presigned_get(
   )
   let prefix = live_case_prefix("kodo-presign")
   let key = prefix + "share.txt"
-  let payload = @utf8.encode("presigned through Kodo's S3 surface\n".view())
+  let payload = @utf8.encode(
+    "presigned through Kodo's S3 surface\n".clamped_view(),
+  )
   let _ = client.put_object({
     bucket,
     key,

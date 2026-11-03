@@ -215,7 +215,7 @@ async fn obs_object_family(
   let prefix = live_case_prefix("obs-family")
   let key = prefix + "family.txt"
   let sample = "moon-s3 compatibility measurement on OBS 中文 +?&=%2F 0123456\n"
-  let payload = @utf8.encode(sample.view())
+  let payload = @utf8.encode(sample.clamped_view())
   let size = payload.length().to_int64()
   live_step(started, calls, "PUT")
   let put = try {
@@ -347,7 +347,9 @@ async fn obs_presigned(
   )
   let prefix = live_case_prefix("obs-presign")
   let key = prefix + "share.txt"
-  let payload = @utf8.encode("presigned through OBS's S3 surface\n".view())
+  let payload = @utf8.encode(
+    "presigned through OBS's S3 surface\n".clamped_view(),
+  )
   let _ = client.put_object({
     bucket,
     key,
@@ -446,7 +448,7 @@ async fn obs_acl(
   )
   let prefix = live_case_prefix("obs-acl")
   let key = prefix + "acl.txt"
-  let payload = @utf8.encode("acl effective on OBS 中文\n".view())
+  let payload = @utf8.encode("acl effective on OBS 中文\n".clamped_view())
   let _ = client.put_object({
     bucket,
     key,

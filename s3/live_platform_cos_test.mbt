@@ -249,7 +249,7 @@ async fn cos_object_family(
   let key = prefix + "family.txt"
   let copy_key = prefix + "copied.txt"
   let sample = "moon-s3 compatibility leg on COS 中文 +?&=%2F 0123456789abcdef\n"
-  let payload = @utf8.encode(sample.view())
+  let payload = @utf8.encode(sample.clamped_view())
   let size = payload.length().to_int64()
   let put : @s3.PutObjectRequest = {
     bucket,
@@ -467,7 +467,7 @@ async fn cos_presigned_get(
   let prefix = live_case_prefix("cos-presign")
   let key = prefix + "share.txt"
   let payload = @utf8.encode(
-    "presigned through the S3-compatible path\n".view(),
+    "presigned through the S3-compatible path\n".clamped_view(),
   )
   let _ = client.put_object({
     bucket,
@@ -538,7 +538,7 @@ async fn cos_canned_acl_effective(
   let prefix = live_case_prefix("cos-acl")
   let key = prefix + "public.txt"
   let payload = @utf8.encode(
-    "readable by anyone while the ACL says so\n".view(),
+    "readable by anyone while the ACL says so\n".clamped_view(),
   )
   let _ = client.put_object({
     bucket,

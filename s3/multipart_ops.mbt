@@ -127,7 +127,7 @@ pub async fn Client::complete_multipart_upload(
     bucket: request.bucket,
     key: request.key,
     query,
-    body: @transport.RequestBody::Bytes(@utf8.encode(document.view())),
+    body: @transport.RequestBody::Bytes(@utf8.encode(document.clamped_view())),
     headers: [],
   }
   let response = self.execute(spec)

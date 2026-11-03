@@ -127,7 +127,7 @@ async fn live_presigned_get(
   let client = make_live_client(endpoint, region, access_key, secret_key, calls)
   let prefix = live_case_prefix("presign")
   let key = prefix + "share.txt"
-  let payload = @utf8.encode("presigned body\n".view())
+  let payload = @utf8.encode("presigned body\n".clamped_view())
   let put_request : @s3.PutObjectRequest = {
     bucket,
     key,

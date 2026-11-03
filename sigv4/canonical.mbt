@@ -14,7 +14,7 @@ pub fn empty_payload_hash() -> String {
 /// outside `A-Z a-z 0-9 - . _ ~` becomes `%XX` with uppercase digits, and a
 /// space becomes `%20` (never `+`).
 pub fn uri_encode_component(text : String) -> String {
-  @percent.encode(text.view())
+  @percent.encode(text.clamped_view())
 }
 
 ///|
@@ -385,7 +385,7 @@ pub fn string_to_sign(
 
 ///|
 fn to_bytes(text : String) -> Bytes {
-  @utf8.encode(text.view())
+  @utf8.encode(text.clamped_view())
 }
 
 ///|

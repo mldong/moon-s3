@@ -180,7 +180,7 @@ async fn oss_object_family(
   let prefix = live_case_prefix("oss-family")
   let key = prefix + "family.txt"
   let sample = "moon-s3 compatibility leg on OSS 中文 +?&=%2F 0123456789abcdefg\n"
-  let payload = @utf8.encode(sample.view())
+  let payload = @utf8.encode(sample.clamped_view())
   let size = payload.length().to_int64()
   live_step(started, calls, "PUT")
   let put = client.put_object({
@@ -279,7 +279,7 @@ async fn oss_presigned_get(
   let prefix = live_case_prefix("oss-presign")
   let key = prefix + "share.txt"
   let payload = @utf8.encode(
-    "presigned through the S3-compatible surface\n".view(),
+    "presigned through the S3-compatible surface\n".clamped_view(),
   )
   live_step(started, calls, "PUT the object to share")
   let _ = client.put_object({
@@ -344,7 +344,9 @@ async fn oss_acl_claim(
   let _ = client.put_object({
     bucket,
     key,
-    body: @transport.RequestBody::Bytes(@utf8.encode("acl claim\n".view())),
+    body: @transport.RequestBody::Bytes(
+      @utf8.encode("acl claim\n".clamped_view()),
+    ),
     content_type: Some("text/plain"),
     metadata: Map([]),
   })
