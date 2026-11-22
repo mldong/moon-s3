@@ -146,7 +146,7 @@ fn header_value(headers : Array[@transport.Header], name : String) -> String? {
 /// Header text is decimal ASCII; anything else reads as absent rather than
 /// being guessed at.
 fn parse_int64_opt(text : StringView) -> Int64? {
-  Some(@string.parse_int64(text, base=10)) catch {
+  Some(@string.parse_int64(text, radix=10)) catch {
     _ => None
   }
 }
