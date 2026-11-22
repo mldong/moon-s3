@@ -1,6 +1,6 @@
 name = "mldong/moon-s3"
 
-version = "0.1.4"
+version = "0.1.5"
 
 license = "Apache-2.0"
 
@@ -9,7 +9,7 @@ preferred_target = "wasm"
 description = "S3 client and Signature V4 implementation for MoonBit"
 
 import {
-  "mldong/moon-hutool@0.1.8",
+  "mldong/moon-hutool@0.1.9",
   "moonbitlang/async@0.22.7",
 }
 
